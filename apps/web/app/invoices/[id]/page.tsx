@@ -5,6 +5,7 @@ type Confidence = { value: unknown; confidence: number };
 type Invoice = {
   invoice_id: string;
   status: string;
+  country_code?: string | null;
   validation: { valid: boolean; issues: { field: string; severity: string; message: string }[] };
   extracted: Record<string, Confidence | unknown>;
   formatted: { type: string };
@@ -50,6 +51,11 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
       <h1 className="mt-1 text-3xl font-bold">Review extracted fields</h1>
       <p className="mt-2 text-slate-600">
         Status: <span className="font-medium">{invoice.status}</span>
+        {invoice.country_code ? (
+          <span className="ml-3 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-wide text-slate-700">
+            {invoice.country_code}
+          </span>
+        ) : null}
       </p>
 
       <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">

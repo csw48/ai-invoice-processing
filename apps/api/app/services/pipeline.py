@@ -1,5 +1,6 @@
 from typing import Callable
 
+from app.country_profiles import detect_country
 from app.models import ClientConfig, EnrichedInvoice, ExtractedInvoice, ProcessedInvoice
 from app.services.extract import extract_invoice_fields
 from app.services.formatters import format_invoice
@@ -19,4 +20,17 @@ def process_invoice(
     validation = validate_invoice(extracted, config)
     enriched = EnrichedInvoice(extracted=extracted)
     formatted = format_invoice(enriched, config.output_connector)
-    return ProcessedInvoice(extracted=extracted, validation=validation, enriched=enriched, formatted=formatted)
+
+    profile = detect_country(
+        explicit_code=config.country_code,
+        vendor_vat=extracted.vendor_vat.value if extracted.vendor_vat else None,
+        currency=extracted.currency.value if extracted.currency else None,
+    )
+
+    return ProcessedInvoice(
+        extracted=extracted,
+        validation=validation,
+        enriched=enriched,
+        formatted=formatted,
+        country_code=profile.code,
+    )

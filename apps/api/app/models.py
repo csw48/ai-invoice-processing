@@ -56,6 +56,7 @@ class ValidationReport(BaseModel):
 class ClientConfig(BaseModel):
     client_id: UUID = Field(default_factory=uuid4)
     name: str = "Demo Firma s.r.o."
+    country_code: str | None = None  # auto-detected when None
     fields_required: list[str] = Field(default_factory=lambda: [
         "vendor_name",
         "invoice_number",
@@ -63,14 +64,11 @@ class ClientConfig(BaseModel):
         "total_amount",
     ])
     fields_optional: list[str] = Field(default_factory=lambda: ["po_number", "cost_center"])
-    validation_rules: dict[str, Any] = Field(default_factory=lambda: {
-        "vat_format": r"SK[0-9]{10}",
-        "date_format": "DD.MM.YYYY",
-        "allowed_currencies": ["EUR"],
-    })
+    # validation_rules can OVERRIDE country profile values; leave empty to use the profile.
+    validation_rules: dict[str, Any] = Field(default_factory=dict)
     output_connector: str = "json"
     connector_config: dict[str, Any] = Field(default_factory=dict)
-    language: str = "sk"
+    language: str = "auto"
     confidence_threshold: float = 0.75
 
 
@@ -88,3 +86,4 @@ class ProcessedInvoice(BaseModel):
     validation: ValidationReport
     enriched: EnrichedInvoice
     formatted: dict[str, Any]
+    country_code: str | None = None  # detected country, attached to processed result
