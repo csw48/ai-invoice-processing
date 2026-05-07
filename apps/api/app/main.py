@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 
-from app.deps import get_repository, get_storage
+from app.deps import get_extractor, get_repository, get_storage
 from app.models import ClientConfig
 from app.repositories import InvoiceRepository
 from app.services.pdf import extract_pdf_text
@@ -39,7 +39,8 @@ async def upload_invoice(
     key = f"{uuid4()}/{filename}"
     file_path = storage.save(key, content, file.content_type or "application/pdf")
 
-    result = process_invoice(raw_text=raw_text, config=ClientConfig())
+    extractor = get_extractor()
+    result = process_invoice(raw_text=raw_text, config=ClientConfig(), extractor=extractor)
     repository.save(result, file_path=file_path, raw_text=raw_text)
 
     payload = result.model_dump(mode="json")
