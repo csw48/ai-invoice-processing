@@ -2,6 +2,10 @@
 
 AI-powered invoice processing for Slovak SMBs: upload PDF invoices, extract structured fields, validate them, review in the UI, and export as Pohoda XML, CSV, JSON, or webhook payload.
 
+## Portfolio summary
+
+This project demonstrates a practical AI SaaS architecture: a typed FastAPI backend, a Next.js review interface, Supabase persistence/storage, deterministic fallback parsing for reliable tests, and export formats that match real accounting workflows.
+
 ## Stack
 
 - **Frontend:** Next.js + TypeScript + Tailwind CSS, deployed on Vercel
