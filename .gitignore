@@ -26,6 +26,11 @@ exports/
 .DS_Store
 
 # Agent/tool local state
+.agents/
+.mcp.json
+skills-lock.json
+/package.json
+/package-lock.json
 .claude-flow/
 .claude/
 .playwright-mcp/
