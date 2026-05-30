@@ -68,6 +68,13 @@ class ExtractedInvoice(BaseModel):
     currency: ConfidenceValue = Field(default_factory=lambda: ConfidenceValue(value="EUR", confidence=0.5))
     po_number: ConfidenceValue = Field(default_factory=ConfidenceValue)
     cost_center: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    # Recipient (buyer / odberateľ) — the party the invoice is addressed to.
+    recipient_name: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    recipient_vat: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    recipient_address: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    recipient_postcode: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    recipient_city: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    recipient_country: ConfidenceValue = Field(default_factory=ConfidenceValue)
     line_items: list[LineItem] = Field(default_factory=list)
 
 

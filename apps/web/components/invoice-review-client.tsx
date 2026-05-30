@@ -36,6 +36,7 @@ const FIELD_COLORS: Record<string, string> = {
   vendor_name: "#818cf8", vendor_vat: "#a78bfa", vendor_iban: "#60a5fa",
   invoice_number: "#34d399", invoice_date: "#f59e0b", due_date: "#fb923c",
   subtotal: "#10b981", vat_amount: "#6ee7b7", total_amount: "#ef4444", currency: "#94a3b8",
+  recipient_name: "#fb7185", recipient_vat: "#e879f9", recipient_address: "#c084fc",
 };
 
 const FIELD_ORDER: { key: string; label: string }[] = [
@@ -52,6 +53,12 @@ const FIELD_ORDER: { key: string; label: string }[] = [
   { key: "currency", label: "Currency" },
   { key: "po_number", label: "PO number" },
   { key: "cost_center", label: "Cost center" },
+  { key: "recipient_name", label: "Recipient" },
+  { key: "recipient_vat", label: "Recipient IČ DPH" },
+  { key: "recipient_address", label: "Recipient address" },
+  { key: "recipient_postcode", label: "Recipient postcode" },
+  { key: "recipient_city", label: "Recipient city" },
+  { key: "recipient_country", label: "Recipient country" },
 ];
 
 function ConfBadge({ conf }: { conf: number }) {

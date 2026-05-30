@@ -63,6 +63,19 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> st
     if vat:
         SubElement(addr, "typ:dic").text = vat
 
+    # My identity (recipient / buyer) — only emitted when a recipient was extracted.
+    if _val(data, "recipient_name"):
+        my = SubElement(header, "inv:myIdentity")
+        my_addr = SubElement(my, "typ:address")
+        SubElement(my_addr, "typ:company").text = _val(data, "recipient_name")
+        for tag, key in (("typ:street", "recipient_address"), ("typ:city", "recipient_city"), ("typ:zip", "recipient_postcode")):
+            v = _val(data, key)
+            if v:
+                SubElement(my_addr, tag).text = v
+        rec_vat = _val(data, "recipient_vat")
+        if rec_vat:
+            SubElement(my_addr, "typ:dic").text = rec_vat
+
     # Bank account (IBAN)
     iban = _val(data, "vendor_iban") or enriched.vendor_metadata.get("iban", "")
     if iban:
