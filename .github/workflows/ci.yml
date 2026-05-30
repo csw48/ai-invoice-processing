@@ -53,4 +53,8 @@ jobs:
       - name: Test
         run: npm test -- --run
       - name: Build
+        # Smoke-test build only; disable auth so it doesn't require Clerk secrets.
+        # Real deployments set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and enable auth.
+        env:
+          NEXT_PUBLIC_ENABLE_AUTH: 'false'
         run: npm run build
