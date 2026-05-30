@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthHeaders } from "../lib/api-auth";
 
 export type Vendor = {
   id: string;
@@ -20,6 +21,7 @@ type Props = {
 
 export function VendorForm({ vendors, apiUrl }: Props) {
   const router = useRouter();
+  const authHeaders = useAuthHeaders();
   const [name, setName] = useState("");
   const [vatNumber, setVatNumber] = useState("");
   const [iban, setIban] = useState("");
@@ -39,7 +41,7 @@ export function VendorForm({ vendors, apiUrl }: Props) {
 
       const res = await fetch(`${apiUrl}/api/vendors/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify(body),
       });
 
@@ -63,7 +65,7 @@ export function VendorForm({ vendors, apiUrl }: Props) {
 
   async function handleDelete(id: string) {
     try {
-      const res = await fetch(`${apiUrl}/api/vendors/${id}`, { method: "DELETE" });
+      const res = await fetch(`${apiUrl}/api/vendors/${id}`, { method: "DELETE", headers: await authHeaders() });
       if (!res.ok && res.status !== 204) {
         console.error(`Delete failed: ${res.status}`);
         return;
