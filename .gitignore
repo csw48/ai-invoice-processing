@@ -24,3 +24,18 @@ coverage/
 uploads/
 exports/
 .DS_Store
+
+# Agent/tool local state
+.agents/
+.mcp.json
+skills-lock.json
+/package.json
+/package-lock.json
+.claude-flow/
+.claude/
+.playwright-mcp/
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db
+**/ruvector.db
+supabase/.temp/

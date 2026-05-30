@@ -1,4 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import InvoiceActions from "../../../components/invoice-actions";
+import InvoiceReviewClient from "../../../components/invoice-review-client";
+import { serverAuthHeaders } from "../../../lib/server-auth";
 
 type Confidence = { value: unknown; confidence: number };
 
@@ -6,36 +10,24 @@ type Invoice = {
   invoice_id: string;
   status: string;
   country_code?: string | null;
+  file_path?: string | null;
+  raw_text?: string | null;
+  word_positions?: Array<{ page: number; text: string; x0: number; y0: number; x1: number; y1: number }> | null;
   validation: { valid: boolean; issues: { field: string; severity: string; message: string }[] };
   extracted: Record<string, Confidence | unknown>;
-  formatted: { type: string };
+  enriched: { vendor_metadata: Record<string, unknown>; duplicate: boolean; category: string | null };
+  formatted: { type: string; payload?: Record<string, unknown> };
 };
-
-const FIELD_ORDER: { key: string; label: string }[] = [
-  { key: "vendor_name", label: "Vendor" },
-  { key: "vendor_vat", label: "Vendor VAT" },
-  { key: "vendor_iban", label: "Vendor IBAN" },
-  { key: "invoice_number", label: "Invoice number" },
-  { key: "invoice_date", label: "Invoice date" },
-  { key: "due_date", label: "Due date" },
-  { key: "subtotal", label: "Subtotal" },
-  { key: "vat_amount", label: "VAT amount" },
-  { key: "total_amount", label: "Total" },
-  { key: "currency", label: "Currency" },
-];
 
 async function fetchInvoice(id: string): Promise<Invoice | null> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  const response = await fetch(`${apiUrl}/api/invoices/${id}`, { cache: "no-store" });
+  const response = await fetch(`${apiUrl}/api/invoices/${id}`, {
+    cache: "no-store",
+    headers: await serverAuthHeaders(),
+  });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Failed to load invoice: ${response.status}`);
   return response.json();
-}
-
-function confidenceColor(conf: number): string {
-  if (conf >= 0.8) return "text-emerald-600";
-  if (conf >= 0.5) return "text-amber-600";
-  return "text-rose-600";
 }
 
 export default async function InvoiceReviewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,62 +35,38 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   const invoice = await fetchInvoice(id);
   if (!invoice) notFound();
 
-  const validation = invoice.validation;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const hasFile = !!invoice.file_path && !invoice.file_path.startsWith("memory://");
+  const fileUrl = hasFile ? `${apiUrl}/api/invoices/${invoice.invoice_id}/file` : null;
+
+  const vendorName = (invoice.extracted as Record<string, Confidence>).vendor_name?.value;
 
   return (
-    <main className="mx-auto max-w-5xl p-8">
-      <p className="text-sm text-slate-500">Invoice {invoice.invoice_id}</p>
-      <h1 className="mt-1 text-3xl font-bold">Review extracted fields</h1>
-      <p className="mt-2 text-slate-600">
-        Status: <span className="font-medium">{invoice.status}</span>
-        {invoice.country_code ? (
-          <span className="ml-3 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-wide text-slate-700">
-            {invoice.country_code}
-          </span>
-        ) : null}
-      </p>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      {/* Top bar */}
+      <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--surface)", display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
+        <Link href="/invoices" style={{ color: "var(--muted)", fontSize: "13px", textDecoration: "none" }}>
+          ← Invoices
+        </Link>
+        <span style={{ color: "var(--border)" }}>|</span>
+        <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>
+          {vendorName ? String(vendorName) : `Invoice ${invoice.invoice_id.slice(0, 8)}…`}
+        </span>
+        <span className={`badge badge-${invoice.status}`}>{invoice.status}</span>
+        {invoice.country_code && <span className="mono" style={{ fontSize: "12px" }}>{invoice.country_code}</span>}
+        <div style={{ marginLeft: "auto" }}>
+          <InvoiceActions
+            invoiceId={invoice.invoice_id}
+            validationValid={invoice.validation.valid}
+            currentStatus={invoice.status}
+            apiUrl={apiUrl}
+            compact
+          />
+        </div>
+      </div>
 
-      <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold">Validation</h2>
-        {validation.valid ? (
-          <p className="mt-2 text-emerald-600">All required fields look good.</p>
-        ) : (
-          <ul className="mt-2 space-y-1 text-sm">
-            {validation.issues.map((issue, idx) => (
-              <li key={`${issue.field}-${idx}`} className={issue.severity === "error" ? "text-rose-600" : "text-amber-600"}>
-                <strong>{issue.field}</strong>: {issue.message} ({issue.severity})
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold">Extracted fields</h2>
-        <table className="mt-4 w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500">
-              <th className="py-2 font-medium">Field</th>
-              <th className="py-2 font-medium">Value</th>
-              <th className="py-2 font-medium">Confidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {FIELD_ORDER.map(({ key, label }) => {
-              const item = invoice.extracted[key] as Confidence | undefined;
-              const value = item?.value ?? "";
-              const conf = item?.confidence ?? 0;
-              return (
-                <tr key={key} className="border-t border-slate-100">
-                  <td className="py-2 font-medium">{label}</td>
-                  <td className="py-2">{value === null || value === "" ? "—" : String(value)}</td>
-                  <td className={`py-2 ${confidenceColor(conf)}`}>{(conf * 100).toFixed(0)}%</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
-    </main>
+      {/* Split review panel (client component handles interaction) */}
+      <InvoiceReviewClient invoice={invoice} fileUrl={fileUrl} apiUrl={apiUrl} />
+    </div>
   );
 }

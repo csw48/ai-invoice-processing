@@ -11,6 +11,34 @@ class InvoiceStatus(StrEnum):
     approved = "approved"
     exported = "exported"
     error = "error"
+    deleted = "deleted"
+    redirect = "redirect"  # classified as "other" — needs manual handling
+    discarded = "discarded"  # classified as "junk"
+
+
+class DocumentType(StrEnum):
+    invoice = "invoice"
+    credit_note = "credit_note"
+    other = "other"
+    junk = "junk"
+
+
+class Party(BaseModel):
+    """A sender or recipient identified during classification."""
+    company_name: str | None = None
+    address: str | None = None
+    vat_id: str | None = None
+
+
+class Classification(BaseModel):
+    document_type: DocumentType = DocumentType.invoice
+    type_reasoning: str = ""
+    sender: Party = Field(default_factory=Party)
+    recipient: Party = Field(default_factory=Party)
+
+    @property
+    def needs_extraction(self) -> bool:
+        return self.document_type in (DocumentType.invoice, DocumentType.credit_note)
 
 
 class ConfidenceValue(BaseModel):
@@ -28,6 +56,7 @@ class LineItem(BaseModel):
 
 class ExtractedInvoice(BaseModel):
     vendor_name: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    vendor_ico: ConfidenceValue = Field(default_factory=ConfidenceValue)
     vendor_vat: ConfidenceValue = Field(default_factory=ConfidenceValue)
     vendor_iban: ConfidenceValue = Field(default_factory=ConfidenceValue)
     invoice_number: ConfidenceValue = Field(default_factory=ConfidenceValue)
@@ -82,8 +111,25 @@ class EnrichedInvoice(BaseModel):
 class ProcessedInvoice(BaseModel):
     invoice_id: UUID = Field(default_factory=uuid4)
     status: InvoiceStatus = InvoiceStatus.review
+    classification: Classification | None = None
     extracted: ExtractedInvoice
     validation: ValidationReport
     enriched: EnrichedInvoice
     formatted: dict[str, Any]
-    country_code: str | None = None  # detected country, attached to processed result
+    country_code: str | None = None
+    file_path: str | None = None
+    raw_text: str | None = None
+    word_positions: list[dict] | None = None
+
+
+class VendorCreate(BaseModel):
+    name: str
+    client_id: str | None = None
+    vat_number: str | None = None
+    iban: str | None = None
+    category: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class Vendor(VendorCreate):
+    id: UUID = Field(default_factory=uuid4)

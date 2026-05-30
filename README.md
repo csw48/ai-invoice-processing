@@ -74,6 +74,40 @@ Required buckets:
 Backend: `apps/api/.env.example`
 Frontend: `apps/web/.env.example`
 
+Notable backend vars:
+
+- `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` — OpenAI-compatible local LLM (e.g. LM Studio at
+  `http://localhost:1234/v1`). Takes priority; falls back to `GEMINI_API_KEY`, then to the
+  deterministic parser when neither is set.
+- `CORS_ORIGINS` — comma-separated allowed origins, or `*` for any (local dev only).
+  Restrict this in production.
+- `ENABLE_AUTH` — `true` to require a verified Clerk session JWT on tenant-scoped
+  endpoints. When `false` (default), the app runs as a single `"default"` tenant with no
+  token required (local dev).
+- `CLERK_JWKS_URL` / `CLERK_ISSUER` — Clerk JWKS endpoint and (optional) issuer used to
+  verify session tokens when `ENABLE_AUTH=true`.
+
+## Multi-tenant config & auth
+
+Each client's config (required fields, validation rules, output connector, confidence
+threshold) is one row in `client_configs`, keyed by client id.
+
+The tenant is resolved **server-side from a verified Clerk session JWT** (the `org_id`/`sub`
+claim) — never from a client-supplied header. With `ENABLE_AUTH=false` everything runs as
+the single `"default"` tenant. With `ENABLE_AUTH=true`, tenant-scoped endpoints
+(`/api/config`, `/api/invoices/*`, `/api/export/*`, `/api/vendors/*`, `/api/stats`) require a
+`Bearer` token; the web app attaches it automatically (client components via Clerk
+`getToken()`, server components via `auth().getToken()`).
+
+**Data isolation:** invoices, vendors, config, and stats are all scoped by `client_id`. Every
+read and write filters on the verified tenant key, so one tenant cannot see or mutate
+another's data (see `test_invoice_data_isolated_per_tenant` / `test_vendor_data_isolated_per_tenant`).
+The DB tables are also locked to the `service_role` (RLS, browser has no direct access).
+
+**Remaining gaps:** `processing_logs` has no `client_id`, so the `agent_performance` stat
+(average step durations — no tenant data) is computed globally. The legacy `clients` table is
+unused (config lives in `client_configs`).
+
 ## CI/CD
 
 GitHub Actions runs on every push and pull request:

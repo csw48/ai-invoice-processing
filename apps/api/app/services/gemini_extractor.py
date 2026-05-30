@@ -18,6 +18,7 @@ EXTRACTION_SCHEMA = {
     "type": "object",
     "properties": {
         "vendor_name": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "vendor_ico": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "vendor_vat": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "vendor_iban": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "invoice_number": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
@@ -45,7 +46,7 @@ EXTRACTION_SCHEMA = {
         },
     },
     "required": [
-        "vendor_name", "vendor_vat", "vendor_iban", "invoice_number",
+        "vendor_name", "vendor_ico", "vendor_vat", "vendor_iban", "invoice_number",
         "invoice_date", "due_date", "subtotal", "vat_amount", "total_amount",
         "currency", "po_number", "cost_center", "line_items",
     ],
@@ -60,7 +61,8 @@ Rules:
 - If a field is missing from the text, set value to null and confidence to 0.0.
 - Dates use the format found in the document (e.g. DD.MM.YYYY for Slovak invoices).
 - Amounts are numbers, not strings. Use a dot as decimal separator.
-- vendor_vat is the supplier's VAT/IC DPH number (Slovak format: SK followed by 10 digits).
+- vendor_ico is the company registration number (IČO/IČ — typically 6-8 digits, NOT the VAT number).
+- vendor_vat is the VAT/tax ID (IČ DPH / DIČ — Slovak format: SK + 10 digits).
 - Be conservative with confidence: 0.9+ only if the field is explicit and unambiguous.
 
 Invoice text:
@@ -98,6 +100,7 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
 
     return ExtractedInvoice(
         vendor_name=cv("vendor_name"),
+        vendor_ico=cv("vendor_ico"),
         vendor_vat=cv("vendor_vat"),
         vendor_iban=cv("vendor_iban"),
         invoice_number=cv("invoice_number"),
