@@ -184,7 +184,8 @@ def _rebuild_processed_invoice(
 ) -> ProcessedInvoice:
     validation = validate_invoice(extracted, config)
     enriched = enrich_invoice(extracted, vendor_repository, repository, client_id)
-    formatted = format_invoice(enriched, config.output_connector)
+    document_type = invoice.classification.document_type.value if invoice.classification else "invoice"
+    formatted = format_invoice(enriched, config.output_connector, document_type)
     profile = detect_country(
         explicit_code=config.country_code,
         vendor_vat=extracted.vendor_vat.value if extracted.vendor_vat else None,
