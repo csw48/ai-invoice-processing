@@ -112,6 +112,18 @@ def test_pipeline_runs_extraction_for_invoice():
     assert result.extracted.vendor_vat.value == "SK1234567890"
 
 
+def test_pipeline_threads_credit_note_into_formatted_output():
+    result = process_invoice(
+        raw_text=INVOICE_TEXT,
+        config=ClientConfig(output_connector="pohoda"),
+        client_id="c1",
+        classifier=lambda _t: Classification(document_type=DocumentType.credit_note),
+    )
+    assert result.classification.document_type is DocumentType.credit_note
+    assert result.formatted["document_type"] == "credit_note"
+    assert "receivedCreditNotice" in result.formatted["payload"]
+
+
 def test_pipeline_classifier_failure_falls_back_to_deterministic():
     def failing_classifier(_t):
         raise RuntimeError("LLM down")

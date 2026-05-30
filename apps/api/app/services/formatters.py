@@ -18,8 +18,9 @@ def _val(data: dict, key: str) -> str:
     return str(v) if v is not None and v != "" else ""
 
 
-def _pohoda_xml(enriched: EnrichedInvoice) -> str:
+def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> str:
     data = enriched.extracted.model_dump(mode="json")
+    is_credit = document_type == "credit_note"
 
     root = Element(
         "dat:dataPack",
@@ -40,7 +41,7 @@ def _pohoda_xml(enriched: EnrichedInvoice) -> str:
 
     # ── Header ──────────────────────────────────────────────────────
     header = SubElement(invoice, "inv:invoiceHeader")
-    SubElement(header, "inv:invoiceType").text = "receivedInvoice"
+    SubElement(header, "inv:invoiceType").text = "receivedCreditNotice" if is_credit else "receivedInvoice"
 
     inv_num = _val(data, "invoice_number")
     num_el = SubElement(header, "inv:number")
@@ -68,7 +69,7 @@ def _pohoda_xml(enriched: EnrichedInvoice) -> str:
         account_el = SubElement(header, "inv:account")
         SubElement(account_el, "typ:accountNo").text = str(iban)
 
-    SubElement(header, "inv:text").text = f"Prijatá faktúra {inv_num}"
+    SubElement(header, "inv:text").text = f"{'Dobropis' if is_credit else 'Prijatá faktúra'} {inv_num}".strip()
 
     # ── Summary ─────────────────────────────────────────────────────
     summary = SubElement(invoice, "inv:invoiceSummary")
@@ -89,21 +90,21 @@ def _pohoda_xml(enriched: EnrichedInvoice) -> str:
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
 
 
-def format_invoice(enriched: EnrichedInvoice, connector: str) -> dict[str, str | dict]:
+def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str = "invoice") -> dict[str, str | dict]:
     data = enriched.extracted.model_dump(mode="json")
     if connector == "json":
-        return {"type": "json", "payload": data}
+        return {"type": "json", "document_type": document_type, "payload": data}
     if connector == "csv":
         output = io.StringIO()
         fields = ["vendor_name", "invoice_number", "invoice_date", "total_amount", "currency"]
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
         writer.writerow({key: _val(data, key) for key in fields})
-        return {"type": "csv", "payload": output.getvalue()}
+        return {"type": "csv", "document_type": document_type, "payload": output.getvalue()}
     if connector == "pohoda":
-        return {"type": "pohoda", "payload": _pohoda_xml(enriched)}
+        return {"type": "pohoda", "document_type": document_type, "payload": _pohoda_xml(enriched, document_type)}
     if connector == "webhook":
         # Payload is the full extracted data; the endpoint URL is resolved at export time
         # from connector_config, not stored here.
-        return {"type": "webhook", "payload": data}
+        return {"type": "webhook", "document_type": document_type, "payload": data}
     raise ValueError(f"Unsupported connector: {connector}")

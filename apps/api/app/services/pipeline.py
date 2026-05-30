@@ -83,7 +83,7 @@ def process_invoice(
         out.append({"duplicate": enriched.duplicate, "vendor_matched": bool(enriched.vendor_metadata)})
 
     with timed_step(log_fn, "format", {"connector": config.output_connector}, invoice_id) as out:
-        formatted = format_invoice(enriched, config.output_connector)
+        formatted = format_invoice(enriched, config.output_connector, classification.document_type.value)
         out.append({"type": formatted.get("type")})
 
     profile = detect_country(

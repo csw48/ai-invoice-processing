@@ -96,6 +96,25 @@ def test_format_invoice_as_csv_and_pohoda_xml():
     assert "INV-2026-001" in csv_payload["payload"]
     assert xml_payload["type"] == "pohoda"
     assert "INV-2026-001" in xml_payload["payload"]
+    # Default document_type is an ordinary received invoice.
+    assert xml_payload["document_type"] == "invoice"
+    assert "receivedInvoice" in xml_payload["payload"]
+    assert "Prijatá faktúra" in xml_payload["payload"]
+
+
+def test_format_credit_note_uses_pohoda_credit_notice_type():
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    enriched = EnrichedInvoice(extracted=extracted)
+
+    xml_payload = format_invoice(enriched, "pohoda", "credit_note")
+    json_payload = format_invoice(enriched, "json", "credit_note")
+
+    assert xml_payload["document_type"] == "credit_note"
+    assert "receivedCreditNotice" in xml_payload["payload"]
+    assert "receivedInvoice" not in xml_payload["payload"]
+    assert "Dobropis" in xml_payload["payload"]
+    # Consumers of other connectors can still distinguish the type.
+    assert json_payload["document_type"] == "credit_note"
 
 
 def test_process_invoice_returns_review_ready_payload():
