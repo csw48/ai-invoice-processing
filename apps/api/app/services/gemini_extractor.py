@@ -30,6 +30,12 @@ EXTRACTION_SCHEMA = {
         "currency": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "po_number": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "cost_center": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_name": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_vat": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_address": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_postcode": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_city": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "recipient_country": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "line_items": {
             "type": "array",
             "items": {
@@ -48,7 +54,10 @@ EXTRACTION_SCHEMA = {
     "required": [
         "vendor_name", "vendor_ico", "vendor_vat", "vendor_iban", "invoice_number",
         "invoice_date", "due_date", "subtotal", "vat_amount", "total_amount",
-        "currency", "po_number", "cost_center", "line_items",
+        "currency", "po_number", "cost_center",
+        "recipient_name", "recipient_vat", "recipient_address",
+        "recipient_postcode", "recipient_city", "recipient_country",
+        "line_items",
     ],
 }
 
@@ -63,6 +72,7 @@ Rules:
 - Amounts are numbers, not strings. Use a dot as decimal separator.
 - vendor_ico is the company registration number (IČO/IČ — typically 6-8 digits, NOT the VAT number).
 - vendor_vat is the VAT/tax ID (IČ DPH / DIČ — Slovak format: SK + 10 digits).
+- recipient_* describes the BUYER (odberateľ/customer) the invoice is addressed to — a DIFFERENT entity from the vendor. Take it from where a company name and full postal address appear together; never from the footer and never from the party that holds the bank/IBAN details (that is the vendor). Split the address block into recipient_address (street), recipient_postcode, recipient_city; recipient_country as ISO ALPHA-2 (SK, DE, AT).
 - Be conservative with confidence: 0.9+ only if the field is explicit and unambiguous.
 
 Invoice text:
@@ -112,6 +122,12 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         currency=cv("currency"),
         po_number=cv("po_number"),
         cost_center=cv("cost_center"),
+        recipient_name=cv("recipient_name"),
+        recipient_vat=cv("recipient_vat"),
+        recipient_address=cv("recipient_address"),
+        recipient_postcode=cv("recipient_postcode"),
+        recipient_city=cv("recipient_city"),
+        recipient_country=cv("recipient_country"),
         line_items=line_items,
     )
 

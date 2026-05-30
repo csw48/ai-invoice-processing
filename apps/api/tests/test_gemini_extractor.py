@@ -17,6 +17,9 @@ def test_parse_gemini_response_returns_extracted_invoice():
         "currency": {"value": "EUR", "confidence": 0.9},
         "po_number": {"value": None, "confidence": 0.0},
         "cost_center": {"value": None, "confidence": 0.0},
+        "recipient_name": {"value": "Odberateľ s.r.o.", "confidence": 0.88},
+        "recipient_vat": {"value": "SK9876543210", "confidence": 0.85},
+        "recipient_city": {"value": "Bratislava", "confidence": 0.8},
         "line_items": [{"description": "Service", "qty": 1, "unit_price": 100.0, "vat_rate": 0.2, "total": 120.0}],
     })
 
@@ -26,6 +29,10 @@ def test_parse_gemini_response_returns_extracted_invoice():
     assert extracted.vendor_vat.value == "SK1234567890"
     assert extracted.total_amount.value == 120.0
     assert extracted.line_items[0].total == 120.0
+    assert extracted.recipient_name.value == "Odberateľ s.r.o."
+    assert extracted.recipient_vat.value == "SK9876543210"
+    # Missing recipient fields default cleanly.
+    assert extracted.recipient_country.value is None
 
 
 class _StubGeminiClient:

@@ -27,12 +27,19 @@ PROMPT = """Extract invoice fields. Return ONLY this JSON (no markdown, no expla
 "currency":{{"value":"EUR","confidence":0.0}},
 "po_number":{{"value":null,"confidence":0.0}},
 "cost_center":{{"value":null,"confidence":0.0}},
+"recipient_name":{{"value":"<buyer/odberateľ company name>","confidence":0.0}},
+"recipient_vat":{{"value":"<buyer VAT ID>","confidence":0.0}},
+"recipient_address":{{"value":"<buyer street address>","confidence":0.0}},
+"recipient_postcode":{{"value":"<buyer postcode>","confidence":0.0}},
+"recipient_city":{{"value":"<buyer city>","confidence":0.0}},
+"recipient_country":{{"value":"<ISO ALPHA-2>","confidence":0.0}},
 "line_items":[{{"description":"<item name>","qty":1.0,"unit_price":0.0,"vat_rate":0.0,"total":0.0}}]}}
 
 Rules:
 - vendor_name = supplier/dodavatel company name (NOT IČO/DIČ labels).
 - vendor_ico = company registration number (IČO/IČ) — 6-8 digit number. NOT the VAT number.
 - vendor_vat = VAT/tax ID (IČ DPH/DIČ) — Slovak: SK + 10 digits. Different from IČO.
+- recipient_* = the BUYER (odberateľ/customer), a DIFFERENT entity from the supplier. Take it from a name+address block, never the footer, never the party holding the IBAN. Split into recipient_address/postcode/city; recipient_country as ISO ALPHA-2.
 - invoice_date: look for "Dátum vystavenia","Datum vystavení","Ausstellungsdatum","Date","Issue date".
 - due_date: look for "Dátum splatnosti","Datum splatnosti","Fälligkeitsdatum","Due date".
 - vat_amount = VAT money amount (e.g. 27.94), NOT the rate (e.g. 23%).

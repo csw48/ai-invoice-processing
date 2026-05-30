@@ -100,6 +100,8 @@ def test_format_invoice_as_csv_and_pohoda_xml():
     assert xml_payload["document_type"] == "invoice"
     assert "receivedInvoice" in xml_payload["payload"]
     assert "Prijatá faktúra" in xml_payload["payload"]
+    # No recipient extracted → no myIdentity block emitted.
+    assert "myIdentity" not in xml_payload["payload"]
 
 
 def test_format_credit_note_uses_pohoda_credit_notice_type():
@@ -115,6 +117,23 @@ def test_format_credit_note_uses_pohoda_credit_notice_type():
     assert "Dobropis" in xml_payload["payload"]
     # Consumers of other connectors can still distinguish the type.
     assert json_payload["document_type"] == "credit_note"
+
+
+def test_pohoda_emits_my_identity_when_recipient_present():
+    from app.models import ConfidenceValue
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.recipient_name = ConfidenceValue(value="Odberateľ s.r.o.", confidence=0.9)
+    extracted.recipient_vat = ConfidenceValue(value="SK9876543210", confidence=0.9)
+    extracted.recipient_city = ConfidenceValue(value="Bratislava", confidence=0.9)
+    enriched = EnrichedInvoice(extracted=extracted)
+
+    xml = format_invoice(enriched, "pohoda")["payload"]
+
+    assert "inv:myIdentity" in xml
+    assert "Odberateľ s.r.o." in xml
+    assert "SK9876543210" in xml
+    assert "Bratislava" in xml
 
 
 def test_process_invoice_returns_review_ready_payload():
