@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthHeaders } from "../lib/api-auth";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
 
@@ -14,8 +15,11 @@ export function uploadButtonLabel(state: UploadState): string {
 
 export function UploadPanel() {
   const router = useRouter();
+  const authHeaders = useAuthHeaders();
   const [state, setState] = useState<UploadState>("idle");
-  const [message, setMessage] = useState("Upload a PDF invoice to extract fields and review them.");
+  const [message, setMessage] = useState(
+    "Upload a PDF invoice to extract fields and review them."
+  );
 
   async function onSubmit(formData: FormData) {
     const file = formData.get("file");
@@ -29,10 +33,16 @@ export function UploadPanel() {
     setMessage("Extracting fields...");
     const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     try {
-      const response = await fetch(`${apiUrl}/api/invoices/upload`, { method: "POST", body: formData });
+      const response = await fetch(`${apiUrl}/api/invoices/upload`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: formData,
+      });
       if (!response.ok) {
         setState("error");
-        setMessage(`Upload failed (${response.status}). Check the API server and env vars.`);
+        setMessage(
+          `Upload failed (${response.status}). Check the API server and env vars.`
+        );
         return;
       }
       const body = (await response.json()) as { invoice_id?: string };
@@ -47,15 +57,93 @@ export function UploadPanel() {
     }
   }
 
+  const messageColor =
+    state === "error"
+      ? "var(--error)"
+      : state === "done"
+      ? "var(--success)"
+      : "var(--text-muted)";
+
   return (
-    <form action={onSubmit} className="rounded-2xl bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold">Quick upload</h2>
-      <p className="mt-2 text-sm text-slate-600">Upload a text-based PDF invoice.</p>
-      <input name="file" type="file" accept="application/pdf,.txt" className="mt-6 block w-full rounded-xl border border-slate-200 p-3" />
-      <button className="mt-4 rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-slate-950 hover:bg-cyan-400" type="submit">
+    <form action={onSubmit} className="card">
+      <h2 className="card-title">Quick upload</h2>
+      <p
+        style={{
+          marginTop: "0.5rem",
+          color: "var(--text-muted)",
+          fontSize: "0.875rem",
+        }}
+      >
+        Upload a text-based PDF invoice.
+      </p>
+
+      <div
+        className="upload-zone"
+        style={{
+          marginTop: "1.5rem",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "12px",
+          padding: "2rem 1.5rem",
+        }}
+      >
+        {/* Upload icon */}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="40"
+          height="40"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="16 12 12 8 8 12" />
+          <line x1="12" y1="8" x2="12" y2="16" />
+        </svg>
+
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--text-muted)",
+            textAlign: "center",
+            margin: 0,
+          }}
+        >
+          Drag and drop or choose a file
+        </p>
+
+        <input
+          name="file"
+          type="file"
+          accept="application/pdf,.txt"
+          className="input"
+          style={{ maxWidth: "100%" }}
+        />
+      </div>
+
+      <button
+        className="btn btn-accent btn-lg"
+        type="submit"
+        style={{ width: "100%", marginTop: "16px" }}
+      >
         {uploadButtonLabel(state)}
       </button>
-      <p className="mt-4 text-sm text-slate-600">{message}</p>
+
+      <p
+        style={{
+          marginTop: "1rem",
+          fontSize: "0.875rem",
+          color: messageColor,
+          transition: "color 0.2s ease",
+        }}
+      >
+        {message}
+      </p>
     </form>
   );
 }

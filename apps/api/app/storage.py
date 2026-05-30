@@ -8,6 +8,10 @@ class FileStorage(Protocol):
         """Persist the file and return its path/URL."""
         ...
 
+    def read(self, key: str) -> bytes:
+        """Read a previously saved file by storage key."""
+        ...
+
 
 class InMemoryFileStorage:
     """In-memory implementation used by tests and local development."""
@@ -37,3 +41,11 @@ class SupabaseFileStorage:
             file_options={"content-type": content_type, "upsert": "true"},
         )
         return f"supabase://{self._bucket}/{key}"
+
+    def get_url(self, key: str, expires_in: int = 3600) -> str:
+        result = self._client.storage.from_(self._bucket).create_signed_url(key, expires_in)
+        return result["signedURL"]
+
+    def read(self, key: str) -> bytes:
+        result = self._client.storage.from_(self._bucket).download(key)
+        return result if isinstance(result, bytes) else bytes(result)

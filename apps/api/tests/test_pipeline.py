@@ -25,6 +25,46 @@ def test_extract_invoice_fields_from_common_invoice_text():
     assert extracted.total_amount.value == 120.00
 
 
+def test_extract_line_items_from_multiline_czech_slovak_table():
+    raw_text = """ALMA OBCHOD s.r.o.
+Faktúra EU2026-00439
+DPH
+CENA ZA MJ
+CELKOM BEZ DPH
+1
+ks
+Rastúca posteľ Montessori Tobi biela 90x200 cm + rošt
+ZADARMO
+23 %
+€ 107,67
+€ 107,67
+1
+ks
+doprava
+23 %
+€ 13,83
+€ 13,83
+SADZBA
+ZÁKLAD
+DPH
+23 %
+€ 121,50
+€ 27,94
+€ 149,44
+"""
+
+    extracted = extract_invoice_fields(raw_text)
+
+    assert len(extracted.line_items) == 2
+    assert extracted.line_items[0].description == "Rastúca posteľ Montessori Tobi biela 90x200 cm + rošt"
+    assert extracted.line_items[0].qty == 1
+    assert extracted.line_items[0].unit_price == 107.67
+    assert extracted.line_items[0].vat_rate == 0.23
+    assert extracted.line_items[0].total == 107.67
+    assert extracted.line_items[1].description == "doprava"
+    assert extracted.line_items[1].unit_price == 13.83
+
+
 def test_validate_invoice_flags_missing_required_fields():
     extracted = extract_invoice_fields("Unknown vendor only")
     report = validate_invoice(extracted, ClientConfig())
@@ -59,8 +99,45 @@ def test_format_invoice_as_csv_and_pohoda_xml():
 
 
 def test_process_invoice_returns_review_ready_payload():
-    result = process_invoice(SAMPLE_INVOICE, ClientConfig(output_connector="json"))
+    result = process_invoice(SAMPLE_INVOICE, ClientConfig(output_connector="json"), "default")
 
     assert result.status == "review"
     assert result.validation.valid is True
     assert result.formatted["type"] == "json"
+
+
+def test_process_invoice_repairs_zero_line_items_from_extractor():
+    raw_text = """ALMA OBCHOD s.r.o.
+Faktúra EU2026-00439
+Invoice date: 11.04.2026
+Total: 149.44 EUR
+1
+ks
+Rastúca posteľ Montessori Tobi biela 90x200 cm + rošt
+23 %
+€ 107,67
+€ 107,67
+"""
+
+    def weak_extractor(text: str):
+        extracted = extract_invoice_fields(text)
+        extracted.line_items[0].qty = 0
+        extracted.line_items[0].unit_price = 0
+        extracted.line_items[0].total = 0
+        return extracted
+
+    result = process_invoice(raw_text, ClientConfig(output_connector="json"), "default", extractor=weak_extractor)
+
+    assert result.extracted.line_items[0].qty == 1
+    assert result.extracted.line_items[0].unit_price == 107.67
+    assert result.formatted["payload"]["line_items"][0]["total"] == 107.67
+
+
+def test_process_invoice_falls_back_when_configured_extractor_fails():
+    def failing_extractor(text: str):
+        raise RuntimeError("local model unavailable")
+
+    result = process_invoice(SAMPLE_INVOICE, ClientConfig(output_connector="json"), "default", extractor=failing_extractor)
+
+    assert result.extracted.invoice_number.value == "INV-2026-001"
+    assert result.validation.valid is True
