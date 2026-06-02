@@ -55,6 +55,20 @@ def test_falls_back_to_name_when_vat_absent():
     assert result.category == "supplies"
 
 
+def test_find_by_name_matches_exact_and_prefix_not_arbitrary_substring():
+    vendors = InMemoryVendorRepository()
+    vendors.create(VendorCreate(name="ACME s.r.o.", category="supplies"), CLIENT)
+
+    # Exact and prefix match.
+    assert vendors.find_by_name("ACME s.r.o.", CLIENT) is not None
+    assert vendors.find_by_name("ACME", CLIENT) is not None
+    # Bare legal-form substring must not match a random vendor.
+    assert vendors.find_by_name("s.r.o.", CLIENT) is None
+    # Empty / too-short query must not match.
+    assert vendors.find_by_name("", CLIENT) is None
+    assert vendors.find_by_name("  ", CLIENT) is None
+
+
 def test_duplicate_detected_within_tenant():
     invoices = InMemoryInvoiceRepository()
     vendors = InMemoryVendorRepository()

@@ -65,6 +65,20 @@ DPH
     assert extracted.line_items[1].unit_price == 13.83
 
 
+def test_extract_captures_negative_totals_for_credit_notes():
+    text = (
+        "Dobropis s.r.o.\n"
+        "Invoice number: CN-2026-001\n"
+        "Subtotal: -100.00\n"
+        "VAT: -20.00\n"
+        "Total: -120.00 EUR\n"
+    )
+    extracted = extract_invoice_fields(text)
+    assert extracted.subtotal.value == -100.0
+    assert extracted.vat_amount.value == -20.0
+    assert extracted.total_amount.value == -120.0
+
+
 def test_delivered_at_extracted_when_present():
     text = SAMPLE_INVOICE + "Date of supply: 05.05.2026\n"
     extracted = extract_invoice_fields(text)
