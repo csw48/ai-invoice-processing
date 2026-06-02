@@ -6,7 +6,7 @@ import InvoicePdfPanel from "./invoice-pdf-panel";
 import { useAuthHeaders } from "../lib/api-auth";
 
 type Confidence = { value: unknown; confidence: number };
-type Issue = { field: string; severity: string; message: string };
+type Issue = { field: string; severity: string; message: string; code?: string | null };
 
 type LineItem = { description: string; qty: number; unit_price: number; vat_rate: number; total: number };
 
@@ -60,6 +60,56 @@ const FIELD_ORDER: { key: string; label: string }[] = [
   { key: "recipient_city", label: "Recipient city" },
   { key: "recipient_country", label: "Recipient country" },
 ];
+
+const FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  FIELD_ORDER.map(({ key, label }) => [key, label])
+);
+
+function ValidationSummary({ issues, valid }: { issues: Issue[]; valid: boolean }) {
+  const errors = issues.filter((i) => i.severity === "error");
+  const warnings = issues.filter((i) => i.severity === "warning");
+
+  if (errors.length === 0 && warnings.length === 0) {
+    return (
+      <div style={{ marginBottom: "16px", padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", fontSize: "13px", color: "var(--success)", fontWeight: 600 }}>
+        All required fields extracted — no validation issues
+      </div>
+    );
+  }
+
+  const headerColor = errors.length > 0 ? "var(--error)" : "#b45309";
+  const headerBg = errors.length > 0 ? "#fef2f2" : "#fffbeb";
+  const headerBorder = errors.length > 0 ? "#fecaca" : "#fde68a";
+
+  return (
+    <div style={{ marginBottom: "16px", background: headerBg, border: `1px solid ${headerBorder}`, borderRadius: "8px", fontSize: "13px", overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px", fontWeight: 600, color: headerColor }}>
+        {errors.length > 0 && `${errors.length} error${errors.length !== 1 ? "s" : ""}`}
+        {errors.length > 0 && warnings.length > 0 && ", "}
+        {warnings.length > 0 && `${warnings.length} warning${warnings.length !== 1 ? "s" : ""}`}
+        {errors.length > 0 ? " — must be fixed before approval" : " — review before approval"}
+      </div>
+      <div style={{ borderTop: `1px solid ${headerBorder}` }}>
+        {[...errors, ...warnings].map((issue, i) => {
+          const color = issue.severity === "error" ? "var(--error)" : "#b45309";
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 14px", borderTop: i > 0 ? "1px solid rgba(0,0,0,0.04)" : "none" }}>
+              {issue.code && (
+                <span className="mono" style={{ fontSize: "10px", fontWeight: 700, color, background: `${color}1a`, border: `1px solid ${color}40`, borderRadius: "4px", padding: "1px 5px", whiteSpace: "nowrap" }}>
+                  {issue.code}
+                </span>
+              )}
+              <span style={{ flex: "0 0 auto", color: "var(--muted)", fontWeight: 500 }}>
+                {FIELD_LABELS[issue.field] ?? issue.field}
+              </span>
+              <span style={{ color: "var(--text)" }}>{issue.message}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function ConfBadge({ conf }: { conf: number }) {
   const pct = Math.round(conf * 100);
@@ -176,17 +226,8 @@ export default function InvoiceReviewClient({
               <div style={{ marginTop: "4px", color: "var(--muted)" }}>{classification!.type_reasoning}</div>
             )}
           </div>
-        ) : !validation.valid ? (
-          <div style={{ marginBottom: "16px", padding: "10px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", fontSize: "13px" }}>
-            <strong style={{ color: "var(--error)" }}>
-              {validation.issues.filter((i) => i.severity === "error").length} error
-              {validation.issues.filter((i) => i.severity === "error").length !== 1 ? "s" : ""}
-            </strong>{" "}— review highlighted fields
-          </div>
         ) : (
-          <div style={{ marginBottom: "16px", padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", fontSize: "13px", color: "var(--success)", fontWeight: 600 }}>
-            All required fields extracted successfully
-          </div>
+          <ValidationSummary issues={validation.issues} valid={validation.valid} />
         )}
 
         {/* Classification */}

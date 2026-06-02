@@ -82,6 +82,10 @@ class ValidationIssue(BaseModel):
     field: str
     severity: str
     message: str
+    # Stable machine-readable code (brief Step 3): E02 (missing net/gross/tax),
+    # E03 (net + tax != gross), E04 (incomplete supplier), E05 (incomplete recipient).
+    # None for checks outside the brief's code set (VAT format, currency, dates).
+    code: str | None = None
 
 
 class ValidationReport(BaseModel):

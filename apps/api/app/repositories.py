@@ -96,6 +96,9 @@ class InMemoryInvoiceRepository:
     def is_duplicate(
         self, invoice_number: str, vendor_vat: str, client_id: str, days: int = 90
     ) -> bool:
+        # Both keys must be present; otherwise None == None would flag a false duplicate.
+        if not invoice_number or not vendor_vat:
+            return False
         for invoice in self._invoices.values():
             if invoice.status == InvoiceStatus.deleted:
                 continue
@@ -196,6 +199,9 @@ class SupabaseInvoiceRepository:
     def is_duplicate(
         self, invoice_number: str, vendor_vat: str, client_id: str, days: int = 90
     ) -> bool:
+        # Both keys must be present; otherwise None == None would flag a false duplicate.
+        if not invoice_number or not vendor_vat:
+            return False
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=days)).isoformat()
         result = (
             self._client.table("invoices")
