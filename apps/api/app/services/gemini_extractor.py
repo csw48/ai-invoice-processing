@@ -10,6 +10,7 @@ import json
 from typing import Protocol
 
 from app.models import ConfidenceValue, ExtractedInvoice, LineItem
+from app.services.normalize import normalize_number
 
 
 # Schema for structured output. We keep it simple and JSON-serialisable: a flat
@@ -97,6 +98,11 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         item = data.get(key) or {}
         return ConfidenceValue(value=item.get("value"), confidence=float(item.get("confidence") or 0.0))
 
+    def cv_number(key: str) -> ConfidenceValue:
+        # Apply the brief's 16-char document-number normalization (left-trim + '*').
+        base = cv(key)
+        return base.model_copy(update={"value": normalize_number(base.value)})
+
     line_items = [
         LineItem(
             description=str(li.get("description", "")),
@@ -113,7 +119,7 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         vendor_ico=cv("vendor_ico"),
         vendor_vat=cv("vendor_vat"),
         vendor_iban=cv("vendor_iban"),
-        invoice_number=cv("invoice_number"),
+        invoice_number=cv_number("invoice_number"),
         invoice_date=cv("invoice_date"),
         due_date=cv("due_date"),
         subtotal=cv("subtotal"),

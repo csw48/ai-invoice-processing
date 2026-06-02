@@ -1,6 +1,7 @@
 import re
 
 from app.models import ConfidenceValue, ExtractedInvoice, LineItem
+from app.services.normalize import normalize_number
 
 
 _PATTERNS = {
@@ -29,10 +30,17 @@ _SUMMARY_MARKERS = {"sadzba", "základ", "zaklad", "spolu", "celkom", "celkem", 
 
 
 def _amount(value: str) -> float:
-    normalized = value.replace(" ", "")
-    if "," in normalized:
-        normalized = normalized.replace(".", "").replace(",", ".")
-    return float(normalized)
+    # Strip ASCII and non-breaking spaces used as thousands separators.
+    s = value.replace(" ", "").replace(" ", "")
+    last_dot = s.rfind(".")
+    last_comma = s.rfind(",")
+    if last_comma > last_dot:
+        # Comma is the decimal separator (EU): dots are thousands separators.
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        # Dot is the decimal separator (US) or there is no comma: commas are thousands.
+        s = s.replace(",", "")
+    return float(s)
 
 
 def _field(text: str, key: str) -> ConfidenceValue:
@@ -42,6 +50,8 @@ def _field(text: str, key: str) -> ConfidenceValue:
     value = match.group(1)
     if key in {"subtotal", "vat_amount", "total_amount"}:
         value = _amount(value)
+    elif key == "invoice_number":
+        value = normalize_number(value)
     return ConfidenceValue(value=value, confidence=0.86)
 
 

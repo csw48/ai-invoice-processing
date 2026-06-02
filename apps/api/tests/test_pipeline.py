@@ -65,6 +65,16 @@ DPH
     assert extracted.line_items[1].unit_price == 13.83
 
 
+def test_amount_parses_eu_and_us_thousands_separators():
+    from app.services.extract import _amount
+
+    assert _amount("107,67") == 107.67          # EU comma decimal
+    assert _amount("1.234,56") == 1234.56        # EU dot thousands
+    assert _amount("1 234,56") == 1234.56        # EU space thousands
+    assert _amount("1,234.56") == 1234.56        # US comma thousands (was misparsed)
+    assert _amount("100.00") == 100.0            # plain dot decimal
+
+
 def test_validate_invoice_flags_missing_required_fields():
     extracted = extract_invoice_fields("Unknown vendor only")
     report = validate_invoice(extracted, ClientConfig())
