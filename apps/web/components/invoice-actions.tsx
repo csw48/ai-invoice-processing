@@ -6,8 +6,9 @@ import { useAuthHeaders } from "../lib/api-auth";
 type ExportResult = {
   invoice_id: string;
   status: string;
+  webhook_delivered?: boolean;
   export: {
-    type: "json" | "csv" | "pohoda";
+    type: "json" | "csv" | "pohoda" | "webhook";
     payload: string | object;
   };
 };
@@ -70,6 +71,10 @@ export default function InvoiceActions({
       });
       if (res.status === 422) {
         setError("Cannot export — fix validation errors first.");
+        return;
+      }
+      if (res.status === 502) {
+        setError("Webhook delivery failed after retries — invoice not exported.");
         return;
       }
       if (!res.ok) {
@@ -138,6 +143,17 @@ export default function InvoiceActions({
           <p style={{ marginBottom: "8px", fontSize: "13px" }}>
             Export result{" "}
             <span className="badge badge-exported">{exportResult.export.type}</span>
+            {exportResult.webhook_delivered !== undefined && (
+              <span
+                className="badge"
+                style={{
+                  marginLeft: "6px",
+                  color: exportResult.webhook_delivered ? "var(--success)" : "var(--error)",
+                }}
+              >
+                {exportResult.webhook_delivered ? "delivered" : "not delivered"}
+              </span>
+            )}
           </p>
           <pre className="code-block">
             {JSON.stringify(exportResult.export.payload, null, 2)}
