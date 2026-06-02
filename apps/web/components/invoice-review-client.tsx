@@ -92,15 +92,15 @@ function ValidationSummary({ issues, valid }: { issues: Issue[]; valid: boolean 
       </div>
       <div style={{ borderTop: `1px solid ${headerBorder}` }}>
         {[...errors, ...warnings].map((issue, i) => {
-          const color = issue.severity === "error" ? "var(--error)" : "#b45309";
+          const color = issue.severity === "error" ? "var(--error)" : "var(--warning)";
           return (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 14px", borderTop: i > 0 ? "1px solid rgba(0,0,0,0.04)" : "none" }}>
               {issue.code && (
-                <span className="mono" style={{ fontSize: "10px", fontWeight: 700, color, background: `${color}1a`, border: `1px solid ${color}40`, borderRadius: "4px", padding: "1px 5px", whiteSpace: "nowrap" }}>
+                <span className="mono" style={{ fontSize: "10px", fontWeight: 700, color, background: `color-mix(in srgb, ${color} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`, borderRadius: "4px", padding: "1px 5px", whiteSpace: "nowrap" }}>
                   {issue.code}
                 </span>
               )}
-              <span style={{ flex: "0 0 auto", color: "var(--muted)", fontWeight: 500 }}>
+              <span style={{ flex: "0 0 auto", color: "var(--text-muted)", fontWeight: 500 }}>
                 {FIELD_LABELS[issue.field] ?? issue.field}
               </span>
               <span style={{ color: "var(--text)" }}>{issue.message}</span>
@@ -114,9 +114,9 @@ function ValidationSummary({ issues, valid }: { issues: Issue[]; valid: boolean 
 
 function ConfBadge({ conf }: { conf: number }) {
   const pct = Math.round(conf * 100);
-  const color = conf >= 0.85 ? "var(--success)" : conf >= 0.6 ? "#f59e0b" : "var(--error)";
+  const color = conf >= 0.85 ? "var(--success)" : conf >= 0.6 ? "var(--warning)" : "var(--error)";
   return (
-    <span style={{ fontSize: "11px", fontWeight: 600, color, background: `${color}18`, border: `1px solid ${color}40`, borderRadius: "4px", padding: "1px 6px", whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: "11px", fontWeight: 600, color, background: `color-mix(in srgb, ${color} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`, borderRadius: "4px", padding: "1px 6px", whiteSpace: "nowrap" }}>
       {pct}%
     </span>
   );
@@ -298,7 +298,7 @@ export default function InvoiceReviewClient({
                 : hasError
                 ? "var(--error)"
                 : hasWarn
-                ? "#f59e0b"
+                ? "var(--warning)"
                 : "var(--border)";
 
               return (
