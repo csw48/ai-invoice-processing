@@ -42,9 +42,9 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   const vendorName = (invoice.extracted as Record<string, Confidence>).vendor_name?.value;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+    <div className="review-page">
       {/* Top bar */}
-      <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--surface)", display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
+      <div className="review-topbar">
         <Link href="/invoices" style={{ color: "var(--muted)", fontSize: "13px", textDecoration: "none" }}>
           ← Invoices
         </Link>

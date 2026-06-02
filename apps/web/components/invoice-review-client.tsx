@@ -204,9 +204,9 @@ export default function InvoiceReviewClient({
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div className="review-split">
       {/* Left: PDF + raw text panel */}
-      <div style={{ flex: "0 0 55%", borderRight: "1px solid var(--border)", background: "#f0f0f0", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div className="review-pane-doc">
         <InvoicePdfPanel
           fileUrl={fileUrl}
           rawText={invoice.raw_text ?? null}
@@ -218,7 +218,7 @@ export default function InvoiceReviewClient({
       </div>
 
       {/* Right: Fields panel */}
-      <div style={{ flex: 1, overflow: "auto", padding: "20px", background: "var(--bg)" }}>
+      <div className="review-pane-fields">
         {/* Classification banner */}
         {isNonInvoice ? (
           <div style={{ marginBottom: "16px", padding: "10px 14px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px" }}>
