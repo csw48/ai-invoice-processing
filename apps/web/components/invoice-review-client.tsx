@@ -34,7 +34,7 @@ type Invoice = {
 
 const FIELD_COLORS: Record<string, string> = {
   vendor_name: "#818cf8", vendor_vat: "#a78bfa", vendor_iban: "#60a5fa",
-  invoice_number: "#34d399", invoice_date: "#f59e0b", due_date: "#fb923c",
+  invoice_number: "#34d399", invoice_date: "#f59e0b", delivered_at: "#fbbf24", due_date: "#fb923c",
   subtotal: "#10b981", vat_amount: "#6ee7b7", total_amount: "#ef4444", currency: "#94a3b8",
   recipient_name: "#fb7185", recipient_vat: "#e879f9", recipient_address: "#c084fc",
 };
@@ -46,6 +46,7 @@ const FIELD_ORDER: { key: string; label: string }[] = [
   { key: "vendor_iban", label: "IBAN" },
   { key: "invoice_number", label: "Invoice number" },
   { key: "invoice_date", label: "Invoice date" },
+  { key: "delivered_at", label: "Delivery date" },
   { key: "due_date", label: "Due date" },
   { key: "subtotal", label: "Subtotal" },
   { key: "vat_amount", label: "VAT amount" },

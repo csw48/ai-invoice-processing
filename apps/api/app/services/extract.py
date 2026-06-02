@@ -8,6 +8,7 @@ _PATTERNS = {
     "vendor_vat": re.compile(r"\b(SK\d{10})\b"),
     "invoice_number": re.compile(r"(?:invoice|fakt[úu]ra)\s*(?:number|číslo|c\.)?\s*[:#]?\s*([A-Z0-9\-/]+)", re.I),
     "invoice_date": re.compile(r"(?:invoice date|dátum vystavenia|date)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
+    "delivered_at": re.compile(r"(?:delivery date|date of supply|dátum dodania|leistungsdatum|lieferdatum)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
     "due_date": re.compile(r"(?:due date|splatnosť)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
     "total_amount": re.compile(r"^\s*(?:total|celkom)\s*:?\s*([0-9]+(?:[,.][0-9]{2})?)\s*(EUR|€)?", re.I | re.M),
     "subtotal": re.compile(r"^\s*(?:subtotal|základ)\s*:?\s*([0-9]+(?:[,.][0-9]{2})?)", re.I | re.M),
@@ -145,6 +146,20 @@ def parse_line_items(raw_text: str) -> list[LineItem]:
     return items
 
 
+def fill_delivered_at(extracted: ExtractedInvoice) -> ExtractedInvoice:
+    """Brief Step 2: when no delivery/service date was found, fall back to issued date.
+
+    The fallback is a defined rule, so it inherits the invoice_date confidence — it
+    must not trip the low-confidence review flag any more than the issue date does.
+    """
+    if extracted.delivered_at.value not in (None, ""):
+        return extracted
+    invoice_date = extracted.invoice_date
+    if invoice_date.value in (None, ""):
+        return extracted
+    return extracted.model_copy(update={"delivered_at": invoice_date.model_copy()})
+
+
 def fill_missing_line_items(extracted: ExtractedInvoice, raw_text: str) -> ExtractedInvoice:
     parsed_items = parse_line_items(raw_text)
     if not parsed_items:
@@ -167,6 +182,7 @@ def extract_invoice_fields(raw_text: str) -> ExtractedInvoice:
         vendor_iban=_field(raw_text, "vendor_iban"),
         invoice_number=_field(raw_text, "invoice_number"),
         invoice_date=_field(raw_text, "invoice_date"),
+        delivered_at=_field(raw_text, "delivered_at"),
         due_date=_field(raw_text, "due_date"),
         subtotal=_field(raw_text, "subtotal"),
         vat_amount=_field(raw_text, "vat_amount"),

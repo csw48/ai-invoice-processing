@@ -68,7 +68,8 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> st
 
     SubElement(header, "inv:symVar").text = inv_num
     SubElement(header, "inv:date").text = _val(data, "invoice_date")
-    SubElement(header, "inv:dateTax").text = _val(data, "invoice_date")
+    # Tax point = delivery/service date when stated, else the issue date.
+    SubElement(header, "inv:dateTax").text = _val(data, "delivered_at") or _val(data, "invoice_date")
 
     due = _val(data, "due_date")
     if due:
