@@ -39,3 +39,7 @@ agentdb.rvf.lock
 ruvector.db
 **/ruvector.db
 supabase/.temp/
+
+# Playwright/live-check artifacts
+review-*.png
+.playwright-mcp/
