@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from app.models import EnrichedInvoice
@@ -37,15 +38,17 @@ def _money(value: float) -> str:
     return f"{round(float(value), 2):.2f}"
 
 
-def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> str:
+def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice", connector_config: dict | None = None) -> str:
     data = enriched.extracted.model_dump(mode="json")
     is_credit = document_type == "credit_note"
+    # dataPack ico = the client/buyer company ICO (from connector config), not the vendor's.
+    client_ico = (connector_config or {}).get("ico", "")
 
     root = Element(
         "dat:dataPack",
         {
             "id": "factura-export",
-            "ico": enriched.vendor_metadata.get("ico", ""),
+            "ico": client_ico,
             "application": "Factura",
             "version": "2.0",
             "note": "Pohoda XML export",
@@ -66,7 +69,10 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> st
     num_el = SubElement(header, "inv:number")
     SubElement(num_el, "typ:numberRequested").text = inv_num
 
-    SubElement(header, "inv:symVar").text = inv_num
+    # symVar is the bank variable symbol: digits only, max 10 chars.
+    sym_var = re.sub(r"[^\d]", "", inv_num)[:10]
+    if sym_var:
+        SubElement(header, "inv:symVar").text = sym_var
     SubElement(header, "inv:date").text = _val(data, "invoice_date")
     # Tax point = delivery/service date when stated, else the issue date.
     SubElement(header, "inv:dateTax").text = _val(data, "delivered_at") or _val(data, "invoice_date")
@@ -167,7 +173,7 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> st
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
 
 
-def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str = "invoice") -> dict[str, str | dict]:
+def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str = "invoice", connector_config: dict | None = None) -> dict[str, str | dict]:
     data = enriched.extracted.model_dump(mode="json")
     if connector == "json":
         return {"type": "json", "document_type": document_type, "payload": data}
@@ -184,7 +190,7 @@ def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str
         writer.writerow({key: _val(data, key) for key in fields})
         return {"type": "csv", "document_type": document_type, "payload": output.getvalue()}
     if connector == "pohoda":
-        return {"type": "pohoda", "document_type": document_type, "payload": _pohoda_xml(enriched, document_type)}
+        return {"type": "pohoda", "document_type": document_type, "payload": _pohoda_xml(enriched, document_type, connector_config)}
     if connector == "webhook":
         # Payload is the full extracted data; the endpoint URL is resolved at export time
         # from connector_config, not stored here.

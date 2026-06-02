@@ -209,6 +209,36 @@ def test_pohoda_emits_line_items_and_vat_bands():
     assert "typ:priceNone" in xml
 
 
+def test_pohoda_symvar_strips_non_digits():
+    """symVar must be numeric-only (bank variable symbol)."""
+    from app.models import ConfidenceValue
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.invoice_number = ConfidenceValue(value="INV-2026-001", confidence=1.0)
+    xml = format_invoice(EnrichedInvoice(extracted=extracted), "pohoda")["payload"]
+    # numberRequested keeps original; symVar only has digits
+    assert "INV-2026-001" in xml
+    assert "<inv:symVar>2026001</inv:symVar>" in xml
+
+
+def test_pohoda_symvar_omitted_when_number_has_no_digits():
+    from app.models import ConfidenceValue
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.invoice_number = ConfidenceValue(value="ABC", confidence=1.0)
+    xml = format_invoice(EnrichedInvoice(extracted=extracted), "pohoda")["payload"]
+    assert "inv:symVar" not in xml
+
+
+def test_pohoda_datapack_ico_comes_from_connector_config():
+    """dataPack ico should be the client's ICO from connector_config, not the vendor's."""
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    xml = format_invoice(
+        EnrichedInvoice(extracted=extracted),
+        "pohoda",
+        connector_config={"ico": "99887766"},
+    )["payload"]
+    assert 'ico="99887766"' in xml
+
+
 def test_pohoda_falls_back_to_flat_totals_without_line_items():
     # SAMPLE_INVOICE is summary-only text (no parseable item table).
     extracted = extract_invoice_fields(SAMPLE_INVOICE)

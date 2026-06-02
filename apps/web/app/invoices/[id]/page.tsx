@@ -61,6 +61,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
             currentStatus={invoice.status}
             apiUrl={apiUrl}
             compact
+            duplicate={invoice.enriched.duplicate}
           />
         </div>
       </div>

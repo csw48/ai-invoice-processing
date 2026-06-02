@@ -20,6 +20,7 @@ type Props = {
   currentStatus: string;
   apiUrl: string;
   compact?: boolean;
+  duplicate?: boolean;
 };
 
 export default function InvoiceActions({
@@ -28,6 +29,7 @@ export default function InvoiceActions({
   currentStatus,
   apiUrl,
   compact = false,
+  duplicate = false,
 }: Props) {
   const router = useRouter();
   const authHeaders = useAuthHeaders();
@@ -96,16 +98,23 @@ export default function InvoiceActions({
 
   if (compact) {
     return (
-      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-        {!isApproved && (
-          <button onClick={handleApprove} disabled={isInFlight} className="btn btn-success" style={{ padding: "6px 14px", fontSize: "13px" }}>
-            {loading === "approve" ? "…" : "Approve"}
-          </button>
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end" }}>
+        {duplicate && !isApproved && (
+          <span style={{ fontSize: "11px", color: "var(--warning)", fontWeight: 600 }}>
+            Possible duplicate
+          </span>
         )}
-        <button onClick={handleExport} disabled={isInFlight} className="btn btn-ghost" style={{ padding: "6px 14px", fontSize: "13px" }}>
-          {loading === "export" ? "…" : "Export"}
-        </button>
-        {error && <span style={{ color: "var(--error)", fontSize: "12px" }}>{error}</span>}
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {!isApproved && (
+            <button onClick={handleApprove} disabled={isInFlight} className="btn btn-success" style={{ padding: "6px 14px", fontSize: "13px" }}>
+              {loading === "approve" ? "…" : "Approve"}
+            </button>
+          )}
+          <button onClick={handleExport} disabled={isInFlight} className="btn btn-ghost" style={{ padding: "6px 14px", fontSize: "13px" }}>
+            {loading === "export" ? "…" : "Export"}
+          </button>
+          {error && <span style={{ color: "var(--error)", fontSize: "12px" }}>{error}</span>}
+        </div>
       </div>
     );
   }
@@ -136,6 +145,11 @@ export default function InvoiceActions({
         </button>
       </div>
 
+      {duplicate && !isApproved && (
+        <p style={{ marginTop: "12px", color: "var(--warning)", fontSize: "13px", fontWeight: 600 }}>
+          Possible duplicate — another invoice with the same number and vendor may already exist.
+        </p>
+      )}
       {error && (
         <p style={{ marginTop: "12px", color: "var(--error)", fontSize: "13px" }}>{error}</p>
       )}
