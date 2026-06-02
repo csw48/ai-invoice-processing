@@ -389,6 +389,80 @@ def test_export_webhook_retries_on_failure(monkeypatch):
 
     assert response.status_code == 200
     assert len(attempts) == 3  # failed twice, succeeded on the third
+    assert response.json()["webhook_delivered"] is True
+
+
+def test_export_webhook_signs_body_with_hmac_when_secret_set(monkeypatch):
+    import hashlib
+    import hmac
+
+    client = _client()
+    secret = "s3cr3t"
+    main_module._config_cache = {
+        ConfigRepository.DEFAULT_ID: ClientConfig(
+            output_connector="webhook",
+            connector_config={"webhook_url": "https://example.test/hook", "webhook_secret": secret},
+        )
+    }
+    captured: list[tuple[bytes, dict]] = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured.append((request.data, dict(request.headers)))
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    pdf_bytes = _pdf_with(
+        "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-HMAC\n"
+        "Invoice date: 07.05.2026\nSubtotal: 100.00\nVAT: 20.00\nTotal: 120.00 EUR\n"
+    )
+    invoice_id = client.post(
+        "/api/invoices/upload", files={"file": ("i.pdf", pdf_bytes, "application/pdf")}
+    ).json()["invoice_id"]
+
+    response = client.post(f"/api/export/{invoice_id}")
+
+    assert response.status_code == 200
+    body, headers = captured[0]
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    assert headers["X-factura-signature"] == expected
+
+
+def test_export_webhook_permanent_failure_does_not_mark_exported(monkeypatch):
+    import urllib.error
+
+    client = _client()
+    main_module._config_cache = {
+        ConfigRepository.DEFAULT_ID: ClientConfig(
+            output_connector="webhook",
+            connector_config={"webhook_url": "https://example.test/hook"},
+        )
+    }
+
+    def always_fail(request, timeout):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("urllib.request.urlopen", always_fail)
+    pdf_bytes = _pdf_with(
+        "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-FAIL\n"
+        "Invoice date: 07.05.2026\nSubtotal: 100.00\nVAT: 20.00\nTotal: 120.00 EUR\n"
+    )
+    invoice_id = client.post(
+        "/api/invoices/upload", files={"file": ("i.pdf", pdf_bytes, "application/pdf")}
+    ).json()["invoice_id"]
+
+    response = client.post(f"/api/export/{invoice_id}")
+    assert response.status_code == 502
+
+    # Invoice must NOT be marked exported — delivery is the export for a webhook.
+    fetched = client.get(f"/api/invoices/{invoice_id}").json()
+    assert fetched["status"] != "exported"
 
 
 def test_vendor_crud_lists_created_vendor_and_soft_deletes_it():

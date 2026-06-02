@@ -428,26 +428,41 @@ def export_invoice(
         raise HTTPException(status_code=422, detail="Cannot export invoice with validation errors")
 
     formatted = invoice.formatted
+    delivered: bool | None = None
     if formatted.get("type") == "webhook":
-        _dispatch_webhook(invoice, config)
+        delivered = _dispatch_webhook(invoice, config)
+        # For a webhook connector the delivery IS the export. If it could not be
+        # delivered, do not mark the invoice exported and report the failure.
+        if delivered is False:
+            raise HTTPException(status_code=502, detail="Webhook delivery failed after retries")
 
     repository.update_status(parsed, InvoiceStatus.exported, client_id)
-    return {
+    response: dict[str, Any] = {
         "invoice_id": str(invoice.invoice_id),
         "status": InvoiceStatus.exported.value,
         "export": formatted,
     }
+    if delivered is not None:
+        response["webhook_delivered"] = delivered
+    return response
 
 
 _WEBHOOK_MAX_ATTEMPTS = 3
 
 
-def _dispatch_webhook(invoice, config: ClientConfig) -> None:
+def _dispatch_webhook(invoice, config: ClientConfig) -> bool | None:
     """POST the invoice payload to the webhook URL from connector_config.
 
-    Retries up to _WEBHOOK_MAX_ATTEMPTS times on network error. Best-effort:
-    a permanent failure is logged but does not fail the export.
+    Retries up to _WEBHOOK_MAX_ATTEMPTS times on network error. When a
+    ``webhook_secret`` is configured the body is signed with HMAC-SHA256 and the
+    digest is sent in the ``X-Factura-Signature`` header so the receiver can
+    verify authenticity.
+
+    Returns True when delivered, False when every attempt failed, and None when
+    no webhook URL is configured (nothing to deliver).
     """
+    import hashlib
+    import hmac
     import json
     import logging
     import urllib.error
@@ -455,24 +470,27 @@ def _dispatch_webhook(invoice, config: ClientConfig) -> None:
 
     url = config.connector_config.get("webhook_url") or config.connector_config.get("url")
     if not url:
-        return
+        return None
 
     body = json.dumps(invoice.formatted.get("payload", {})).encode()
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json", "X-Factura-Invoice-Id": str(invoice.invoice_id)},
-        method="POST",
-    )
+    headers = {"Content-Type": "application/json", "X-Factura-Invoice-Id": str(invoice.invoice_id)}
+
+    secret = config.connector_config.get("webhook_secret")
+    if secret:
+        signature = hmac.new(str(secret).encode(), body, hashlib.sha256).hexdigest()
+        headers["X-Factura-Signature"] = f"sha256={signature}"
+
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     for attempt in range(1, _WEBHOOK_MAX_ATTEMPTS + 1):
         try:
             with urllib.request.urlopen(req, timeout=10):
-                return
+                return True
         except urllib.error.URLError as exc:
             logging.warning(
                 "Webhook delivery failed for invoice %s (attempt %d/%d): %s",
                 invoice.invoice_id, attempt, _WEBHOOK_MAX_ATTEMPTS, exc,
             )
+    return False
 
 
 @app.get("/api/vendors/")
