@@ -18,6 +18,25 @@ def _val(data: dict, key: str) -> str:
     return str(v) if v is not None and v != "" else ""
 
 
+def _vat_band(rate: float, max_rate: float | None) -> str:
+    """Map a numeric VAT rate to a Pohoda band: none / low / high.
+
+    The highest rate present on the invoice is treated as the standard ("high")
+    band; any lower non-zero rate is "low"; zero / exempt is "none". This adapts
+    per invoice without needing per-country rate tables.
+    """
+    if not rate:
+        return "none"
+    if max_rate is not None and rate >= max_rate:
+        return "high"
+    return "low"
+
+
+def _money(value: float) -> str:
+    # Pohoda expects a dot decimal separator and at most 2 decimals.
+    return f"{round(float(value), 2):.2f}"
+
+
 def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> str:
     data = enriched.extracted.model_dump(mode="json")
     is_credit = document_type == "credit_note"
@@ -84,17 +103,61 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice") -> st
 
     SubElement(header, "inv:text").text = f"{'Dobropis' if is_credit else 'Prijatá faktúra'} {inv_num}".strip()
 
+    # ── Detail (line items) ─────────────────────────────────────────
+    items = enriched.extracted.line_items
+    rates = [li.vat_rate for li in items if li.vat_rate]
+    max_rate = max(rates) if rates else None
+    # Per-band aggregates for the summary: base (net) and VAT, keyed by band.
+    bands: dict[str, dict[str, float]] = {}
+
+    if items:
+        detail = SubElement(invoice, "inv:invoiceDetail")
+        for li in items:
+            band = _vat_band(li.vat_rate, max_rate)
+            base = float(li.total or 0)
+            vat = round(base * float(li.vat_rate or 0), 2)
+            acc = bands.setdefault(band, {"base": 0.0, "vat": 0.0})
+            acc["base"] += base
+            acc["vat"] += vat
+
+            item_el = SubElement(detail, "inv:invoiceItem")
+            SubElement(item_el, "inv:text").text = li.description or ""
+            SubElement(item_el, "inv:quantity").text = _money(li.qty or 0)
+            SubElement(item_el, "inv:rateVAT").text = band
+            home_item = SubElement(item_el, "inv:homeCurrency")
+            SubElement(home_item, "typ:unitPrice").text = _money(li.unit_price or 0)
+            SubElement(home_item, "typ:price").text = _money(base)
+            SubElement(home_item, "typ:priceVAT").text = _money(vat)
+
     # ── Summary ─────────────────────────────────────────────────────
     summary = SubElement(invoice, "inv:invoiceSummary")
     home = SubElement(summary, "inv:homeCurrency")
 
-    def _price_el(parent: Element, tag: str, key: str) -> None:
-        v = _val(data, key)
-        SubElement(parent, tag).text = v if v else "0"
+    _BAND_TAGS = {
+        "none": ("typ:priceNone", None),
+        "low": ("typ:priceLow", "typ:priceLowVAT"),
+        "high": ("typ:priceHigh", "typ:priceHighVAT"),
+    }
 
-    _price_el(home, "typ:priceHigh", "subtotal")
-    _price_el(home, "typ:priceHighVAT", "vat_amount")
-    _price_el(home, "typ:priceHighSum", "total_amount")
+    if bands:
+        # Emit one base (+ VAT) pair per VAT band actually present on the invoice.
+        for band in ("none", "low", "high"):
+            if band not in bands:
+                continue
+            base_tag, vat_tag = _BAND_TAGS[band]
+            SubElement(home, base_tag).text = _money(bands[band]["base"])
+            if vat_tag is not None:
+                SubElement(home, vat_tag).text = _money(bands[band]["vat"])
+    else:
+        # No line items parsed — fall back to the flat extracted totals as a single
+        # standard-rate band (preserves behaviour for summary-only invoice text).
+        def _price_el(tag: str, key: str) -> None:
+            v = _val(data, key)
+            SubElement(home, tag).text = v if v else "0"
+
+        _price_el("typ:priceHigh", "subtotal")
+        _price_el("typ:priceHighVAT", "vat_amount")
+        _price_el("typ:priceHighSum", "total_amount")
 
     round_el = SubElement(home, "typ:round")
     SubElement(round_el, "typ:priceRound").text = "0"
@@ -109,7 +172,12 @@ def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str
         return {"type": "json", "document_type": document_type, "payload": data}
     if connector == "csv":
         output = io.StringIO()
-        fields = ["vendor_name", "invoice_number", "invoice_date", "total_amount", "currency"]
+        fields = [
+            "vendor_name", "vendor_vat", "vendor_iban",
+            "invoice_number", "invoice_date", "due_date",
+            "subtotal", "vat_amount", "total_amount", "currency",
+            "recipient_name", "recipient_vat",
+        ]
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
         writer.writerow({key: _val(data, key) for key in fields})

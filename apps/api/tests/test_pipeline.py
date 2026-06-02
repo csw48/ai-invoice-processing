@@ -146,6 +146,53 @@ def test_pohoda_emits_my_identity_when_recipient_present():
     assert "Bratislava" in xml
 
 
+def test_pohoda_emits_line_items_and_vat_bands():
+    from app.models import LineItem
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.line_items = [
+        LineItem(description="Standard goods", qty=1, unit_price=100.0, vat_rate=0.23, total=100.0),
+        LineItem(description="Reduced goods", qty=1, unit_price=50.0, vat_rate=0.10, total=50.0),
+        LineItem(description="Exempt service", qty=1, unit_price=10.0, vat_rate=0.0, total=10.0),
+    ]
+    enriched = EnrichedInvoice(extracted=extracted)
+
+    xml = format_invoice(enriched, "pohoda")["payload"]
+
+    # Detail block with one item per line.
+    assert "inv:invoiceDetail" in xml
+    assert xml.count("inv:invoiceItem") == 2 * 3  # open + close tags per item
+    assert "Standard goods" in xml and "Reduced goods" in xml and "Exempt service" in xml
+    # Highest rate (23%) -> high band, 10% -> low band, 0% -> none band.
+    assert "<inv:rateVAT>high</inv:rateVAT>" in xml
+    assert "<inv:rateVAT>low</inv:rateVAT>" in xml
+    assert "<inv:rateVAT>none</inv:rateVAT>" in xml
+    # Summary carries all three bands; high VAT = 100*0.23 = 23.00.
+    assert "typ:priceHigh" in xml and "<typ:priceHighVAT>23.00</typ:priceHighVAT>" in xml
+    assert "typ:priceLow" in xml and "<typ:priceLowVAT>5.00</typ:priceLowVAT>" in xml
+    assert "typ:priceNone" in xml
+
+
+def test_pohoda_falls_back_to_flat_totals_without_line_items():
+    # SAMPLE_INVOICE is summary-only text (no parseable item table).
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    assert extracted.line_items == []
+    xml = format_invoice(EnrichedInvoice(extracted=extracted), "pohoda")["payload"]
+
+    assert "inv:invoiceDetail" not in xml
+    assert "typ:priceHigh" in xml  # flat fallback still emits the standard band
+
+
+def test_csv_carries_richer_column_set():
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    csv_payload = format_invoice(EnrichedInvoice(extracted=extracted), "csv")["payload"]
+
+    header = csv_payload.splitlines()[0]
+    for col in ("vendor_vat", "vendor_iban", "subtotal", "vat_amount", "due_date", "recipient_name"):
+        assert col in header
+    assert "SK1234567890" in csv_payload  # vendor_vat value now present
+
+
 def test_process_invoice_returns_review_ready_payload():
     result = process_invoice(SAMPLE_INVOICE, ClientConfig(output_connector="json"), "default")
 
