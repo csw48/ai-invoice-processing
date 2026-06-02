@@ -117,6 +117,39 @@ body::before {
 }
 .page-sub { margin-top: 6px; font-size: 14px; color: var(--text-muted); }
 
+/* ─── Review screen (PDF + fields split) ────────────────────────────────── */
+.review-page {
+  display: flex; flex-direction: column;
+  height: 100vh; overflow: hidden;
+}
+.review-topbar {
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.review-split { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+.review-pane-doc {
+  flex: 0 0 55%; min-height: 0;
+  border-right: 1px solid var(--border);
+  background: #f0f0f0; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.review-pane-fields {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 20px; background: var(--bg);
+}
+/* Below 900px the side-by-side split is unusable: stack vertically, give the
+   document a capped height, and let the page scroll naturally. */
+@media (max-width: 900px) {
+  .review-page { height: auto; min-height: 100vh; overflow: visible; }
+  .review-split { flex-direction: column; overflow: visible; }
+  .review-pane-doc {
+    flex: 0 0 auto; height: 55vh;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .review-pane-fields { overflow: visible; padding: 16px; }
+}
+
 /* ─── Stat Cards ────────────────────────────────────────────────────────── */
 .stat-card {
   background: var(--surface);
@@ -221,6 +254,12 @@ select.field-input { cursor: pointer; }
   box-shadow: var(--shadow-sm);
 }
 .data-table { width: 100%; border-collapse: collapse; }
+/* Wide tables (8 columns) would clip inside the rounded wrap on small screens;
+   allow horizontal scroll instead and keep a sensible minimum width. */
+@media (max-width: 720px) {
+  .table-wrap { overflow-x: auto; }
+  .data-table { min-width: 640px; }
+}
 .data-table thead tr { border-bottom: 1px solid var(--border); background: var(--surface-raised); }
 .data-table th {
   padding: 11px 20px; text-align: left;
