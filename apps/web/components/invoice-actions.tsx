@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuthHeaders } from "../lib/api-auth";
 
@@ -28,6 +29,7 @@ export default function InvoiceActions({
   apiUrl,
   compact = false,
 }: Props) {
+  const router = useRouter();
   const authHeaders = useAuthHeaders();
   const [loading, setLoading] = useState<"approve" | "export" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export default function InvoiceActions({
         setError(`Approval failed (${res.status}). Please try again.`);
         return;
       }
-      window.location.reload();
+      router.refresh();
     } catch {
       setError("Network error. Please check your connection and try again.");
     } finally {

@@ -66,7 +66,10 @@ def process_invoice(
             extracted = extract(raw_text)
         except Exception as exc:
             fallback_reason = str(exc)
-            extracted = extract_invoice_fields(raw_text)
+            try:
+                extracted = extract_invoice_fields(raw_text)
+            except Exception:
+                extracted = ExtractedInvoice()
         extracted = fill_missing_line_items(extracted, raw_text)
         extracted = fill_delivered_at(extracted)
         output = {"fields_extracted": len(type(extracted).model_fields)}

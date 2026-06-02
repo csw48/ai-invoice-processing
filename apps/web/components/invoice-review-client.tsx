@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import InvoiceActions from "./invoice-actions";
 import InvoicePdfPanel from "./invoice-pdf-panel";
@@ -131,6 +132,7 @@ export default function InvoiceReviewClient({
   fileUrl: string | null;
   apiUrl: string;
 }) {
+  const router = useRouter();
   const authHeaders = useAuthHeaders();
   const [activeTab, setActiveTab] = useState<"pdf" | "text">(fileUrl ? "pdf" : "text");
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
@@ -196,7 +198,7 @@ export default function InvoiceReviewClient({
         body: JSON.stringify(changed),
       });
       if (res.ok) {
-        window.location.reload();
+        router.refresh();
       }
     } finally {
       setSaving(false);
@@ -305,6 +307,9 @@ export default function InvoiceReviewClient({
                 <div
                   key={key}
                   onClick={() => handleFieldClick(key)}
+                  role={hasValue && !editing ? "button" : undefined}
+                  tabIndex={hasValue && !editing ? 0 : undefined}
+                  onKeyDown={hasValue && !editing ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFieldClick(key); } } : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -416,6 +421,7 @@ export default function InvoiceReviewClient({
 }
 
 function ReprocessButton({ invoiceId, apiUrl }: { invoiceId: string; apiUrl: string }) {
+  const router = useRouter();
   const authHeaders = useAuthHeaders();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"ai" | "ocr" | null>(null);
@@ -429,7 +435,7 @@ function ReprocessButton({ invoiceId, apiUrl }: { invoiceId: string; apiUrl: str
       const res = await fetch(url, { method: "POST", headers: await authHeaders() });
       if (res.ok) {
         setDone(true);
-        setTimeout(() => window.location.reload(), 800);
+        setTimeout(() => router.refresh(), 800);
       }
     } finally {
       setLoading(false);

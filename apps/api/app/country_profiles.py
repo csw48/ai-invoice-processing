@@ -153,8 +153,8 @@ def detect_country(
     currency: str | None,
 ) -> CountryProfile:
     """Pick a country profile from explicit code, VAT prefix, or currency hint."""
-    if explicit_code and explicit_code.upper() in PROFILES:
-        return PROFILES[explicit_code.upper()]
+    if explicit_code and explicit_code.strip().upper() in PROFILES:
+        return PROFILES[explicit_code.strip().upper()]
 
     if vendor_vat:
         prefix = vendor_vat.strip().upper()[:2]

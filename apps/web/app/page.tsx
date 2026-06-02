@@ -20,19 +20,6 @@ export default async function Dashboard() {
     <main className="page">
       {/* Hero */}
       <section className="fade-up">
-        <p
-          className="page-sub"
-          style={{
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            fontSize: "11px",
-            fontWeight: 700,
-            color: "var(--accent)",
-            marginBottom: "8px",
-          }}
-        >
-          Slovak SMB invoice automation
-        </p>
         <h1 className="page-title">
           Upload invoices, verify AI extraction, export to Pohoda.
         </h1>
