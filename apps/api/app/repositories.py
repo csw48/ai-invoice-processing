@@ -272,9 +272,16 @@ class InMemoryVendorRepository:
         return None
 
     def find_by_name(self, name: str, client_id: str) -> "Vendor | None":
-        name_lower = name.lower()
+        # Match on an exact (case-insensitive) name or a prefix relationship, not a
+        # bare substring: "s.r.o." or "" must not pull an arbitrary vendor.
+        query = (name or "").strip().lower()
+        if len(query) < 3:
+            return None
         for vendor in self._vendors.values():
-            if vendor.client_id == client_id and name_lower in vendor.name.lower():
+            if vendor.client_id != client_id:
+                continue
+            stored = vendor.name.strip().lower()
+            if query == stored or stored.startswith(query) or query.startswith(stored):
                 return vendor
         return None
 
@@ -339,11 +346,15 @@ class SupabaseVendorRepository:
         return _row_to_vendor(result.data)
 
     def find_by_name(self, name: str, client_id: str) -> "Vendor | None":
+        # Guard against an empty/too-short query, which would ilike-match every row.
+        query = (name or "").strip()
+        if len(query) < 3:
+            return None
         result = (
             self._client.table("vendors")
             .select("*")
             .eq("client_id", client_id)
-            .ilike("name", f"%{name}%")
+            .ilike("name", f"%{query}%")
             .limit(1)
             .execute()
         )

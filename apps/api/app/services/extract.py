@@ -10,9 +10,9 @@ _PATTERNS = {
     "invoice_date": re.compile(r"(?:invoice date|dátum vystavenia|date)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
     "delivered_at": re.compile(r"(?:delivery date|date of supply|dátum dodania|leistungsdatum|lieferdatum)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
     "due_date": re.compile(r"(?:due date|splatnosť)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})", re.I),
-    "total_amount": re.compile(r"^\s*(?:total|celkom)\s*:?\s*([0-9]+(?:[,.][0-9]{2})?)\s*(EUR|€)?", re.I | re.M),
-    "subtotal": re.compile(r"^\s*(?:subtotal|základ)\s*:?\s*([0-9]+(?:[,.][0-9]{2})?)", re.I | re.M),
-    "vat_amount": re.compile(r"^\s*(?:vat|dph)\s*:?\s*([0-9]+(?:[,.][0-9]{2})?)", re.I | re.M),
+    "total_amount": re.compile(r"^\s*(?:total|celkom)\s*:?\s*(-?[0-9]+(?:[,.][0-9]{2})?)\s*(EUR|€)?", re.I | re.M),
+    "subtotal": re.compile(r"^\s*(?:subtotal|základ)\s*:?\s*(-?[0-9]+(?:[,.][0-9]{2})?)", re.I | re.M),
+    "vat_amount": re.compile(r"^\s*(?:vat|dph)\s*:?\s*(-?[0-9]+(?:[,.][0-9]{2})?)", re.I | re.M),
     "vendor_iban": re.compile(r"\b([A-Z]{2}\d{2}[A-Z0-9]{10,30})\b"),
 }
 _QTY_RE = re.compile(r"^\d+(?:[,.]\d+)?$")
