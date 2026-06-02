@@ -170,7 +170,7 @@ export default async function InvoiceListPage({
                     {attention(inv) === "clear" ? (
                       <span style={{ color: "var(--success)", fontWeight: 600 }}>clear</span>
                     ) : (
-                      <span style={{ color: inv.validation.valid ? "#f59e0b" : "var(--error)", fontWeight: 600 }}>
+                      <span style={{ color: inv.validation.valid ? "var(--warning)" : "var(--error)", fontWeight: 600 }}>
                         {attention(inv)}
                       </span>
                     )}
