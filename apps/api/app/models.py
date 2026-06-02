@@ -61,6 +61,9 @@ class ExtractedInvoice(BaseModel):
     vendor_iban: ConfidenceValue = Field(default_factory=ConfidenceValue)
     invoice_number: ConfidenceValue = Field(default_factory=ConfidenceValue)
     invoice_date: ConfidenceValue = Field(default_factory=ConfidenceValue)
+    # Service / delivery date (Leistungsdatum / Lieferdatum / dátum dodania).
+    # Falls back to invoice_date when the document does not state one.
+    delivered_at: ConfidenceValue = Field(default_factory=ConfidenceValue)
     due_date: ConfidenceValue = Field(default_factory=ConfidenceValue)
     subtotal: ConfidenceValue = Field(default_factory=ConfidenceValue)
     vat_amount: ConfidenceValue = Field(default_factory=ConfidenceValue)

@@ -24,6 +24,7 @@ EXTRACTION_SCHEMA = {
         "vendor_iban": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "invoice_number": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "invoice_date": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
+        "delivered_at": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "due_date": {"type": "object", "properties": {"value": {"type": "string", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "subtotal": {"type": "object", "properties": {"value": {"type": "number", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
         "vat_amount": {"type": "object", "properties": {"value": {"type": "number", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
@@ -54,7 +55,7 @@ EXTRACTION_SCHEMA = {
     },
     "required": [
         "vendor_name", "vendor_ico", "vendor_vat", "vendor_iban", "invoice_number",
-        "invoice_date", "due_date", "subtotal", "vat_amount", "total_amount",
+        "invoice_date", "delivered_at", "due_date", "subtotal", "vat_amount", "total_amount",
         "currency", "po_number", "cost_center",
         "recipient_name", "recipient_vat", "recipient_address",
         "recipient_postcode", "recipient_city", "recipient_country",
@@ -70,6 +71,7 @@ Rules:
 - For every field set "value" (string/number) and "confidence" (0.0-1.0).
 - If a field is missing from the text, set value to null and confidence to 0.0.
 - Dates use the format found in the document (e.g. DD.MM.YYYY for Slovak invoices).
+- delivered_at is the service/delivery date (dátum dodania / Leistungsdatum / Lieferdatum / date of supply). If the document does not state one, leave it null — the pipeline falls back to invoice_date.
 - Amounts are numbers, not strings. Use a dot as decimal separator.
 - vendor_ico is the company registration number (IČO/IČ — typically 6-8 digits, NOT the VAT number).
 - vendor_vat is the VAT/tax ID (IČ DPH / DIČ — Slovak format: SK + 10 digits).
@@ -121,6 +123,7 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         vendor_iban=cv("vendor_iban"),
         invoice_number=cv_number("invoice_number"),
         invoice_date=cv("invoice_date"),
+        delivered_at=cv("delivered_at"),
         due_date=cv("due_date"),
         subtotal=cv("subtotal"),
         vat_amount=cv("vat_amount"),

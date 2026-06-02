@@ -65,6 +65,28 @@ DPH
     assert extracted.line_items[1].unit_price == 13.83
 
 
+def test_delivered_at_extracted_when_present():
+    text = SAMPLE_INVOICE + "Date of supply: 05.05.2026\n"
+    extracted = extract_invoice_fields(text)
+    assert extracted.delivered_at.value == "05.05.2026"
+
+
+def test_delivered_at_falls_back_to_invoice_date():
+    from app.services.extract import fill_delivered_at
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    assert extracted.delivered_at.value is None  # not stated in SAMPLE
+    filled = fill_delivered_at(extracted)
+    assert filled.delivered_at.value == filled.invoice_date.value == "07.05.2026"
+    # The fallback is a defined rule, so it inherits the issue-date confidence.
+    assert filled.delivered_at.confidence == filled.invoice_date.confidence
+
+
+def test_pipeline_fills_delivered_at_via_fallback():
+    result = process_invoice(SAMPLE_INVOICE, ClientConfig(output_connector="json"), "default")
+    assert result.extracted.delivered_at.value == "07.05.2026"
+
+
 def test_amount_parses_eu_and_us_thousands_separators():
     from app.services.extract import _amount
 

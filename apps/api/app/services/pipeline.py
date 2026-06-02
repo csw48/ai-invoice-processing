@@ -14,7 +14,7 @@ from app.models import (
 )
 from app.services.classify import classify_document
 from app.services.enrich import enrich_invoice
-from app.services.extract import extract_invoice_fields, fill_missing_line_items
+from app.services.extract import extract_invoice_fields, fill_delivered_at, fill_missing_line_items
 from app.services.formatters import format_invoice
 from app.services.log import LogFn, timed_step
 from app.services.validate import validate_invoice
@@ -68,6 +68,7 @@ def process_invoice(
             fallback_reason = str(exc)
             extracted = extract_invoice_fields(raw_text)
         extracted = fill_missing_line_items(extracted, raw_text)
+        extracted = fill_delivered_at(extracted)
         output = {"fields_extracted": len(type(extracted).model_fields)}
         if fallback_reason:
             output["fallback"] = "deterministic"
