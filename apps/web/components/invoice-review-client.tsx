@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import InvoiceActions from "./invoice-actions";
 import InvoicePdfPanel from "./invoice-pdf-panel";
 import { useAuthHeaders } from "../lib/api-auth";
 
@@ -10,6 +9,8 @@ type Confidence = { value: unknown; confidence: number };
 type Issue = { field: string; severity: string; message: string; code?: string | null };
 
 type LineItem = { description: string; qty: number; unit_price: number; vat_rate: number; total: number };
+
+type TaxLine = { rate: number; base: number; amount: number };
 
 type Party = { company_name: string | null; address: string | null; vat_id: string | null };
 type Classification = {
@@ -28,9 +29,15 @@ type Invoice = {
   raw_text?: string | null;
   word_positions?: Array<{ page: number; text: string; x0: number; y0: number; x1: number; y1: number }> | null;
   validation: { valid: boolean; issues: Issue[] };
-  extracted: Record<string, Confidence | unknown> & { line_items?: LineItem[] };
-  enriched: { vendor_metadata: Record<string, unknown>; duplicate: boolean; category: string | null };
-  formatted: { type: string };
+  extracted: Record<string, Confidence | unknown> & { line_items?: LineItem[]; tax_lines?: TaxLine[] };
+  enriched: {
+    vendor_metadata: Record<string, unknown>;
+    duplicate: boolean;
+    category: string | null;
+    vat_mismatch?: boolean;
+    stored_vat?: string | null;
+  };
+  formatted: { type: string; payload?: string | Record<string, unknown> };
 };
 
 const FIELD_COLORS: Record<string, string> = {
@@ -52,6 +59,7 @@ const FIELD_ORDER: { key: string; label: string }[] = [
   { key: "subtotal", label: "Subtotal" },
   { key: "vat_amount", label: "VAT amount" },
   { key: "total_amount", label: "Total" },
+  { key: "amount_due", label: "Amount due" },
   { key: "currency", label: "Currency" },
   { key: "po_number", label: "PO number" },
   { key: "cost_center", label: "Cost center" },
@@ -255,6 +263,11 @@ export default function InvoiceReviewClient({
                 );
               })}
             </div>
+            {classification.type_reasoning && (
+              <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--muted)", fontStyle: "italic" }}>
+                {classification.type_reasoning}
+              </div>
+            )}
           </div>
         )}
 
@@ -385,10 +398,58 @@ export default function InvoiceReviewClient({
           </div>
         )}
 
+        {/* Tax breakdown (per-rate VAT bands) */}
+        {(invoice.extracted.tax_lines ?? []).length > 0 && (
+          <div style={{ marginBottom: "24px" }}>
+            <h3 style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "12px" }}>
+              Tax Breakdown
+            </h3>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "8px", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                <thead>
+                  <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                    <th style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 600 }}>VAT rate</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 600 }}>Base (net)</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", color: "var(--muted)", fontWeight: 600 }}>Tax</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(invoice.extracted.tax_lines ?? []).map((tl, i) => (
+                    <tr key={i} style={{ borderBottom: i < (invoice.extracted.tax_lines?.length ?? 0) - 1 ? "1px solid var(--border)" : "none", background: i % 2 === 0 ? "var(--bg)" : "var(--surface)" }}>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--text)" }}>
+                        {Math.round((tl.rate <= 1 ? tl.rate * 100 : tl.rate))}%
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--text)" }}>{tl.base?.toFixed(2)}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "var(--text)" }}>{tl.amount?.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Enrichment */}
         <div style={{ marginBottom: "24px" }}>
           <h3 style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "12px" }}>Enrichment</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {invoice.enriched.vat_mismatch && (
+              <div style={{ padding: "10px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", fontSize: "13px", color: "#b45309", fontWeight: 600 }}>
+                VAT mismatch — extracted IČ DPH differs from the stored vendor record
+                {invoice.enriched.stored_vat && (
+                  <span className="mono" style={{ fontWeight: 500 }}> (stored: {invoice.enriched.stored_vat})</span>
+                )}
+              </div>
+            )}
+            {Object.keys(invoice.enriched.vendor_metadata).length > 0 && (
+              <div style={{ padding: "10px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px", display: "flex", gap: "10px", alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ flex: "0 0 120px", color: "var(--muted)", fontWeight: 500 }}>Vendor match</span>
+                <span style={{ fontWeight: 600 }}>{String(invoice.enriched.vendor_metadata.name ?? "Known vendor")}</span>
+                {invoice.enriched.vendor_metadata.iban ? (
+                  <span className="mono" style={{ color: "var(--muted)", fontSize: "12px" }}>{String(invoice.enriched.vendor_metadata.iban)}</span>
+                ) : null}
+              </div>
+            )}
             <div style={{ padding: "10px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px", display: "flex", gap: "10px", alignItems: "center" }}>
               <span style={{ flex: "0 0 120px", color: "var(--muted)", fontWeight: 500 }}>Duplicate</span>
               <span style={{ color: invoice.enriched.duplicate ? "var(--error)" : "var(--success)", fontWeight: 600 }}>
@@ -410,6 +471,18 @@ export default function InvoiceReviewClient({
           <div style={{ padding: "10px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px" }}>
             <span style={{ color: "var(--muted)", fontWeight: 500 }}>Connector: </span>
             <span className="mono">{invoice.formatted.type}</span>
+            {invoice.formatted.payload !== undefined && (
+              <details style={{ marginTop: "8px" }}>
+                <summary style={{ cursor: "pointer", fontSize: "12px", color: "var(--muted)", fontWeight: 500 }}>
+                  Preview export payload
+                </summary>
+                <pre className="code-block" style={{ marginTop: "8px", maxHeight: "320px", overflow: "auto" }}>
+                  {typeof invoice.formatted.payload === "string"
+                    ? invoice.formatted.payload
+                    : JSON.stringify(invoice.formatted.payload, null, 2)}
+                </pre>
+              </details>
+            )}
           </div>
         </div>
 

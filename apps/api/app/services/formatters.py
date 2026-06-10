@@ -43,6 +43,12 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice", conne
     is_credit = document_type == "credit_note"
     # dataPack ico = the client/buyer company ICO (from connector config), not the vendor's.
     client_ico = (connector_config or {}).get("ico", "")
+    # Foreign-currency invoice: amounts go under foreignCurrency elements; the
+    # exchange rate is resolved by Pohoda's own daily-rate table on import.
+    home_currency = str((connector_config or {}).get("home_currency", "EUR")).upper()
+    doc_currency = _val(data, "currency").upper()
+    is_foreign = bool(doc_currency) and doc_currency != home_currency
+    item_currency_tag = "inv:foreignCurrency" if is_foreign else "inv:homeCurrency"
 
     root = Element(
         "dat:dataPack",
@@ -131,7 +137,7 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice", conne
             SubElement(item_el, "inv:text").text = li.description or ""
             SubElement(item_el, "inv:quantity").text = _money(li.qty or 0)
             SubElement(item_el, "inv:rateVAT").text = band
-            home_item = SubElement(item_el, "inv:homeCurrency")
+            home_item = SubElement(item_el, item_currency_tag)
             SubElement(home_item, "typ:unitPrice").text = _money(li.unit_price or 0)
             SubElement(home_item, "typ:price").text = _money(base)
             SubElement(home_item, "typ:priceVAT").text = _money(vat)
@@ -147,6 +153,17 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice", conne
 
     # ── Summary ─────────────────────────────────────────────────────
     summary = SubElement(invoice, "inv:invoiceSummary")
+
+    if is_foreign:
+        foreign = SubElement(summary, "inv:foreignCurrency")
+        currency_el = SubElement(foreign, "typ:currency")
+        SubElement(currency_el, "typ:ids").text = doc_currency
+        SubElement(foreign, "typ:amount").text = "1"
+        total = _val(data, "total_amount")
+        SubElement(foreign, "typ:priceSum").text = total if total else "0"
+        xml_bytes = tostring(root, encoding="unicode", xml_declaration=False)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
+
     home = SubElement(summary, "inv:homeCurrency")
 
     _BAND_TAGS = {

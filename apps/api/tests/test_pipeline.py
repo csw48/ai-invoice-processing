@@ -302,3 +302,48 @@ def test_process_invoice_falls_back_when_configured_extractor_fails():
 
     assert result.extracted.invoice_number.value == "INV-2026-001"
     assert result.validation.valid is True
+
+
+def test_pohoda_foreign_currency_invoice_emits_foreign_summary():
+    from app.models import ConfidenceValue
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.currency = ConfidenceValue(value="CZK", confidence=0.95)
+    xml = format_invoice(EnrichedInvoice(extracted=extracted), "pohoda")["payload"]
+
+    assert "inv:foreignCurrency" in xml
+    assert "<typ:ids>CZK</typ:ids>" in xml
+    assert "<typ:priceSum>120.0</typ:priceSum>" in xml
+    # Home-currency band summary must not be emitted for foreign invoices.
+    assert "inv:homeCurrency" not in xml
+
+
+def test_pohoda_home_currency_respects_connector_config():
+    from app.models import ConfidenceValue
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.currency = ConfidenceValue(value="CZK", confidence=0.95)
+    # Czech client: CZK is the home currency, so no foreign block.
+    xml = format_invoice(
+        EnrichedInvoice(extracted=extracted),
+        "pohoda",
+        connector_config={"home_currency": "CZK"},
+    )["payload"]
+
+    assert "inv:foreignCurrency" not in xml
+    assert "inv:homeCurrency" in xml
+
+
+def test_pohoda_foreign_currency_line_items_use_foreign_element():
+    from app.models import ConfidenceValue, LineItem
+
+    extracted = extract_invoice_fields(SAMPLE_INVOICE)
+    extracted.currency = ConfidenceValue(value="USD", confidence=0.95)
+    extracted.line_items = [
+        LineItem(description="Goods", qty=1, unit_price=100.0, vat_rate=0.23, total=100.0),
+    ]
+    xml = format_invoice(EnrichedInvoice(extracted=extracted), "pohoda")["payload"]
+
+    assert "inv:invoiceDetail" in xml
+    assert "inv:foreignCurrency" in xml
+    assert "inv:homeCurrency" not in xml
