@@ -10,7 +10,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.deps import get_classifier, get_config_repository, get_extractor, get_log_fn, get_repository, get_storage, get_vendor_repository
 from app.repositories import ConfigRepository
 from app.country_profiles import detect_country
-from app.models import Classification, ClientConfig, ConfidenceValue, DocumentType, ExtractedInvoice, InvoiceStatus, ProcessedInvoice, VendorCreate
+from app.models import Classification, ClientConfig, ConfidenceValue, DocumentType, EnrichedInvoice, ExtractedInvoice, InvoiceStatus, ProcessedInvoice, ValidationReport, VendorCreate
 from app.repositories import InvoiceRepository, VendorRepository
 from app.services.classify import classify_document
 from app.services.enrich import enrich_invoice
@@ -65,9 +65,53 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def _run_pipeline_background(
+    invoice_id,
+    raw_text: str,
+    word_positions,
+    file_path: str,
+    config: ClientConfig,
+    client_id: str,
+    repository,
+    vendor_repository,
+) -> None:
+    """Run the extraction pipeline and persist the result. Runs as a BackgroundTask."""
+    import logging as _logging
+    try:
+        extractor = get_extractor()
+        classifier = get_classifier()
+        log_buffer = BufferedLogFn(client_id=client_id)
+        result = process_invoice(
+            raw_text=raw_text,
+            config=config,
+            client_id=client_id,
+            extractor=extractor,
+            classifier=classifier,
+            vendor_repository=vendor_repository,
+            invoice_repository=repository,
+            log_fn=log_buffer,
+            invoice_id=invoice_id,
+        )
+        repository.save(
+            result,
+            file_path=file_path,
+            raw_text=raw_text,
+            client_id=client_id,
+            word_positions=word_positions,
+        )
+        log_buffer.flush_to(get_log_fn())
+    except Exception as exc:
+        _logging.error("Background pipeline failed for invoice %s: %s", invoice_id, exc)
+        try:
+            repository.update_status(invoice_id, InvoiceStatus.error, client_id)
+        except Exception:
+            pass
+
+
 @app.post("/api/invoices/upload")
 async def upload_invoice(
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
     storage: FileStorage = Depends(get_storage),
     repository: InvoiceRepository = Depends(get_repository),
     vendor_repository: VendorRepository = Depends(get_vendor_repository),
@@ -94,15 +138,42 @@ async def upload_invoice(
     key = f"{invoice_id}/{filename}"
     file_path = storage.save(key, content, file.content_type or "application/pdf")
 
-    extractor = get_extractor()
-    classifier = get_classifier()
-    log_buffer = BufferedLogFn()
+    # Save a stub immediately so the UI can show processing state,
+    # then run the Gemini extraction pipeline in the background.
+    stub = ProcessedInvoice(
+        invoice_id=invoice_id,
+        status=InvoiceStatus.processing,
+        extracted=ExtractedInvoice(),
+        validation=ValidationReport(valid=True, issues=[]),
+        enriched=EnrichedInvoice(extracted=ExtractedInvoice()),
+        formatted={"type": "pending"},
+    )
+    repository.save(stub, file_path=file_path, raw_text=raw_text, client_id=client_id, word_positions=word_positions)
+
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _run_pipeline_background,
+            invoice_id=invoice_id,
+            raw_text=raw_text,
+            word_positions=word_positions,
+            file_path=file_path,
+            config=config,
+            client_id=client_id,
+            repository=repository,
+            vendor_repository=vendor_repository,
+        )
+        payload = stub.model_dump(mode="json")
+        payload["file_path"] = file_path
+        return payload
+
+    # Synchronous fallback (tests inject background_tasks=None).
+    log_buffer = BufferedLogFn(client_id=client_id)
     result = process_invoice(
         raw_text=raw_text,
         config=config,
         client_id=client_id,
-        extractor=extractor,
-        classifier=classifier,
+        extractor=get_extractor(),
+        classifier=get_classifier(),
         vendor_repository=vendor_repository,
         invoice_repository=repository,
         log_fn=log_buffer,
@@ -110,7 +181,6 @@ async def upload_invoice(
     )
     repository.save(result, file_path=file_path, raw_text=raw_text, client_id=client_id, word_positions=word_positions)
     log_buffer.flush_to(get_log_fn())
-
     payload = result.model_dump(mode="json")
     payload["file_path"] = file_path
     return payload
@@ -120,24 +190,43 @@ async def upload_invoice(
 def list_invoices(
     status: str | None = None,
     needs_review: bool = False,
-    vendor: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
     repository: InvoiceRepository = Depends(get_repository),
     config: ClientConfig = Depends(get_active_config),
     client_id: str = Depends(get_client_id),
 ):
-    invoices = repository.list(client_id)
-    if status:
-        invoices = [invoice for invoice in invoices if invoice.status.value == status]
+    per_page = min(max(1, per_page), 200)
+    page = max(1, page)
+    offset = (page - 1) * per_page
+
     if needs_review:
-        invoices = [invoice for invoice in invoices if _invoice_needs_review(invoice, config)]
-    if vendor:
-        vendor_lower = vendor.lower()
-        invoices = [
-            invoice
-            for invoice in invoices
-            if vendor_lower in str(invoice.extracted.vendor_name.value or "").lower()
-        ]
-    return [inv.model_dump(mode="json") for inv in invoices]
+        # needs_review requires in-memory scoring — fetch all, filter, then paginate.
+        all_invoices = repository.list(client_id, limit=10_000)
+        if status:
+            all_invoices = [inv for inv in all_invoices if inv.status.value == status]
+        if q:
+            q_lower = q.lower()
+            all_invoices = [
+                inv for inv in all_invoices
+                if q_lower in str(inv.extracted.vendor_name.value or "").lower()
+                or q_lower in str(inv.extracted.invoice_number.value or "").lower()
+            ]
+        all_invoices = [inv for inv in all_invoices if _invoice_needs_review(inv, config)]
+        total = len(all_invoices)
+        invoices = all_invoices[offset : offset + per_page]
+    else:
+        total = repository.count(client_id, status=status, search=q)
+        invoices = repository.list(client_id, offset=offset, limit=per_page, status=status, search=q)
+
+    return {
+        "items": [inv.model_dump(mode="json") for inv in invoices],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": max(1, -(-total // per_page)),
+    }
 
 
 def _invoice_needs_review(invoice: ProcessedInvoice, config: ClientConfig) -> bool:
@@ -666,9 +755,14 @@ def get_stats(
             except Exception:
                 daily_counts = []
 
-            # agent_performance — avg duration per pipeline agent
+            # agent_performance — avg duration per pipeline agent, scoped to this tenant
             try:
-                result = client.table("processing_logs").select("agent_name,duration_ms").execute()
+                result = (
+                    client.table("processing_logs")
+                    .select("agent_name,duration_ms")
+                    .eq("client_id", client_id)
+                    .execute()
+                )
                 agent_durations: dict[str, list[int]] = collections.defaultdict(list)
                 for row in result.data or []:
                     agent_name = row.get("agent_name")

@@ -36,7 +36,22 @@ class InvoiceRepository(Protocol):
     def get(self, invoice_id: UUID, client_id: str) -> ProcessedInvoice | None:
         ...
 
-    def list(self, client_id: str, limit: int = 50) -> list[ProcessedInvoice]:
+    def list(
+        self,
+        client_id: str,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[ProcessedInvoice]:
+        ...
+
+    def count(
+        self,
+        client_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
         ...
 
     def update_status(self, invoice_id: UUID, status: InvoiceStatus, client_id: str) -> bool:
@@ -64,6 +79,34 @@ class InMemoryInvoiceRepository:
         self._files: dict[UUID, str] = {}
         self._raw: dict[UUID, str] = {}
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+
+    def _active_invoices(
+        self,
+        client_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[ProcessedInvoice]:
+        invoices = [
+            inv for inv in self._invoices.values()
+            if inv.status != InvoiceStatus.deleted
+            and self._owner.get(inv.invoice_id) == client_id
+        ]
+        if status:
+            invoices = [inv for inv in invoices if inv.status.value == status]
+        if search:
+            s = search.lower()
+            invoices = [
+                inv for inv in invoices
+                if s in str(inv.extracted.vendor_name.value or "").lower()
+                or s in str(inv.extracted.invoice_number.value or "").lower()
+            ]
+        # Stable order: most-recently saved first (UUID insertion order reversed)
+        return list(reversed(invoices))
+
+    # ------------------------------------------------------------------
+
     def save(
         self,
         invoice: ProcessedInvoice,
@@ -90,13 +133,24 @@ class InMemoryInvoiceRepository:
             return None
         return self._invoices.get(invoice_id)
 
-    def list(self, client_id: str, limit: int = 50) -> list[ProcessedInvoice]:
-        invoices = [
-            inv
-            for inv in self._invoices.values()
-            if inv.status != InvoiceStatus.deleted and self._owner.get(inv.invoice_id) == client_id
-        ]
-        return invoices[-limit:]
+    def list(
+        self,
+        client_id: str,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[ProcessedInvoice]:
+        invoices = self._active_invoices(client_id, status=status, search=search)
+        return invoices[offset : offset + limit]
+
+    def count(
+        self,
+        client_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        return len(self._active_invoices(client_id, status=status, search=search))
 
     def update_status(self, invoice_id: UUID, status: InvoiceStatus, client_id: str) -> bool:
         invoice = self._invoices.get(invoice_id)
@@ -219,17 +273,45 @@ class SupabaseInvoiceRepository:
             return None
         return _row_to_invoice(result.data)
 
-    def list(self, client_id: str, limit: int = 50) -> list[ProcessedInvoice]:
-        result = (
+    def list(
+        self,
+        client_id: str,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[ProcessedInvoice]:
+        q = (
             self._client.table("invoices")
             .select("*")
             .eq("client_id", client_id)
             .neq("status", "deleted")
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
         )
+        if status:
+            q = q.eq("status", status)
+        if search:
+            q = q.ilike("raw_text", f"%{search}%")
+        result = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
         return [_row_to_invoice(row) for row in (result.data or [])]
+
+    def count(
+        self,
+        client_id: str,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        q = (
+            self._client.table("invoices")
+            .select("id", count="exact")
+            .eq("client_id", client_id)
+            .neq("status", "deleted")
+        )
+        if status:
+            q = q.eq("status", status)
+        if search:
+            q = q.ilike("raw_text", f"%{search}%")
+        result = q.execute()
+        return result.count or 0
 
     def update_status(self, invoice_id: UUID, status: InvoiceStatus, client_id: str) -> bool:
         result = (

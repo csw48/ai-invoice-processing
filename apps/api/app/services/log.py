@@ -13,10 +13,15 @@ LogEntry = tuple[str, dict, dict | None, int, str | None, UUID | None]
 
 
 class BufferedLogFn:
-    """Collect log calls so they can be flushed after invoice persistence."""
+    """Collect log calls so they can be flushed after invoice persistence.
 
-    def __init__(self) -> None:
+    Pass client_id at construction time; it is included in every row on flush
+    so agent-performance stats can be scoped per tenant.
+    """
+
+    def __init__(self, client_id: str | None = None) -> None:
         self.entries: list[LogEntry] = []
+        self.client_id = client_id
 
     def __call__(
         self,
@@ -33,7 +38,7 @@ class BufferedLogFn:
         if log_fn is None:
             return
         for entry in self.entries:
-            log_fn(*entry)
+            log_fn(*entry, client_id=self.client_id)  # type: ignore[call-arg]
 
 
 def make_logger(supabase_client) -> LogFn | None:
@@ -48,6 +53,7 @@ def make_logger(supabase_client) -> LogFn | None:
         duration_ms: int,
         error: str | None,
         invoice_id: UUID | None = None,
+        client_id: str | None = None,
     ) -> None:
         try:
             row: dict[str, Any] = {
@@ -59,6 +65,8 @@ def make_logger(supabase_client) -> LogFn | None:
             }
             if invoice_id is not None:
                 row["invoice_id"] = str(invoice_id)
+            if client_id is not None:
+                row["client_id"] = client_id
             supabase_client.table("processing_logs").insert(row).execute()
         except Exception:
             pass  # never propagate logging errors

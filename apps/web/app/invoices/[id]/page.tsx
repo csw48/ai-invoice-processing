@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import InvoiceActions from "../../../components/invoice-actions";
 import InvoiceReviewClient from "../../../components/invoice-review-client";
+import ProcessingPoller from "../../../components/processing-poller";
 import { serverAuthHeaders } from "../../../lib/server-auth";
 
 type Confidence = { value: unknown; confidence: number };
@@ -36,6 +37,7 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
   if (!invoice) notFound();
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const isProcessing = invoice.status === "processing";
   const hasFile = !!invoice.file_path && !invoice.file_path.startsWith("memory://");
   const fileUrl = hasFile ? `${apiUrl}/api/invoices/${invoice.invoice_id}/file` : null;
 
@@ -55,19 +57,25 @@ export default async function InvoiceReviewPage({ params }: { params: Promise<{ 
         <span className={`badge badge-${invoice.status}`}>{invoice.status}</span>
         {invoice.country_code && <span className="mono" style={{ fontSize: "12px" }}>{invoice.country_code}</span>}
         <div style={{ marginLeft: "auto" }}>
-          <InvoiceActions
-            invoiceId={invoice.invoice_id}
-            validationValid={invoice.validation.valid}
-            currentStatus={invoice.status}
-            apiUrl={apiUrl}
-            compact
-            duplicate={invoice.enriched.duplicate}
-          />
+          {!isProcessing && (
+            <InvoiceActions
+              invoiceId={invoice.invoice_id}
+              validationValid={invoice.validation.valid}
+              currentStatus={invoice.status}
+              apiUrl={apiUrl}
+              compact
+              duplicate={invoice.enriched.duplicate}
+            />
+          )}
         </div>
       </div>
 
-      {/* Split review panel (client component handles interaction) */}
-      <InvoiceReviewClient invoice={invoice} fileUrl={fileUrl} apiUrl={apiUrl} />
+      {/* Processing state: auto-refresh until pipeline completes */}
+      {isProcessing ? (
+        <ProcessingPoller invoiceId={invoice.invoice_id} />
+      ) : (
+        <InvoiceReviewClient invoice={invoice} fileUrl={fileUrl} apiUrl={apiUrl} />
+      )}
     </div>
   );
 }

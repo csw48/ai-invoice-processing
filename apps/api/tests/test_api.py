@@ -44,15 +44,18 @@ def test_upload_pdf_returns_invoice_with_extracted_fields():
         "Total: 120.00 EUR\n"
     )
 
-    response = client.post(
+    upload = client.post(
         "/api/invoices/upload",
         files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")},
     )
+    assert upload.status_code == 200
+    # Upload returns a stub immediately (status=processing); background task
+    # runs synchronously in TestClient before this call returns.
+    invoice_id = upload.json()["invoice_id"]
+    assert upload.json()["file_path"].startswith("memory://")
 
-    assert response.status_code == 200
-    body = response.json()
+    body = client.get(f"/api/invoices/{invoice_id}").json()
     assert body["extracted"]["invoice_number"]["value"] == "INV-2026-001"
-    assert body["file_path"].startswith("memory://")
 
 
 def test_upload_saves_invoice_before_processing_logs_are_flushed(monkeypatch):
@@ -64,7 +67,7 @@ def test_upload_saves_invoice_before_processing_logs_are_flushed(monkeypatch):
             events.append("save")
             return super().save(*args, **kwargs)
 
-    def log(agent_name, input_data, output_data, duration_ms, error, invoice_id=None):
+    def log(agent_name, input_data, output_data, duration_ms, error, invoice_id=None, client_id=None):
         events.append(f"log:{agent_name}")
 
     set_repository(TrackingInvoiceRepository())
@@ -85,8 +88,9 @@ def test_upload_saves_invoice_before_processing_logs_are_flushed(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert events == [
-        "save",
+    # Stub is saved first, then background task: save full result + flush logs.
+    assert events[:2] == ["save", "save"]
+    assert events[2:] == [
         "log:classify",
         "log:extract",
         "log:validate",
@@ -135,7 +139,8 @@ def test_list_invoices_can_filter_review_queue():
     response = client.get("/api/invoices/?needs_review=true")
 
     assert response.status_code == 200
-    invoices = response.json()
+    body = response.json()
+    invoices = body["items"]
     assert [inv["extracted"]["invoice_number"]["value"] for inv in invoices] == ["INV-REVIEW"]
 
 
@@ -179,7 +184,9 @@ def test_update_invoice_fields_revalidates_and_reformats_invoice():
         files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")},
     )
     invoice_id = upload.json()["invoice_id"]
-    assert upload.json()["validation"]["valid"] is False
+    # Background task runs synchronously in TestClient; fetch processed result.
+    fetched = client.get(f"/api/invoices/{invoice_id}").json()
+    assert fetched["validation"]["valid"] is False
 
     response = client.put(
         f"/api/invoices/{invoice_id}/fields",
@@ -586,12 +593,12 @@ def test_invoice_data_isolated_per_tenant():
         )
         invoice_id = upload.json()["invoice_id"]
         assert client.get(f"/api/invoices/{invoice_id}").status_code == 200
-        assert len(client.get("/api/invoices/").json()) == 1
+        assert client.get("/api/invoices/").json()["total"] == 1
 
         # Tenant B cannot read tenant A's invoice, by id or in listings.
         app.dependency_overrides[get_client_id] = lambda: "tenant-b"
         assert client.get(f"/api/invoices/{invoice_id}").status_code == 404
-        assert client.get("/api/invoices/").json() == []
+        assert client.get("/api/invoices/").json()["items"] == []
         # Nor delete it.
         assert client.delete(f"/api/invoices/{invoice_id}").status_code == 404
     finally:
@@ -623,10 +630,10 @@ def test_reprocess_force_invoice_overrides_classification():
         "/api/invoices/upload",
         files={"file": ("scan.pdf", pdf_bytes, "application/pdf")},
     )
-    body = upload.json()
+    invoice_id = upload.json()["invoice_id"]
+    body = client.get(f"/api/invoices/{invoice_id}").json()
     assert body["classification"]["document_type"] == "junk"
     assert body["status"] == "discarded"
-    invoice_id = body["invoice_id"]
 
     response = client.post(f"/api/invoices/{invoice_id}/reprocess?force_invoice=true")
 

@@ -28,21 +28,33 @@ function statusBadge(status: string): string {
 type InvoiceFilters = {
   status?: string;
   needs_review?: string;
-  vendor?: string;
+  q?: string;
+  page?: string;
 };
 
-async function fetchInvoices(filters: InvoiceFilters): Promise<Invoice[]> {
+type PagedInvoices = {
+  items: Invoice[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+};
+
+const EMPTY_PAGE: PagedInvoices = { items: [], total: 0, page: 1, per_page: 50, pages: 1 };
+
+async function fetchInvoices(filters: InvoiceFilters): Promise<PagedInvoices> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.needs_review === "true") params.set("needs_review", "true");
-  if (filters.vendor) params.set("vendor", filters.vendor);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.page && Number(filters.page) > 1) params.set("page", filters.page);
   const query = params.toString();
   const res = await fetch(`${apiUrl}/api/invoices/${query ? `?${query}` : ""}`, {
     cache: "no-store",
     headers: await serverAuthHeaders(),
   });
-  if (!res.ok) return [];
+  if (!res.ok) return EMPTY_PAGE;
   return res.json();
 }
 
@@ -65,9 +77,14 @@ function filterHref(filters: InvoiceFilters) {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.needs_review === "true") params.set("needs_review", "true");
-  if (filters.vendor) params.set("vendor", filters.vendor);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.page && Number(filters.page) > 1) params.set("page", filters.page);
   const query = params.toString();
   return `/invoices${query ? `?${query}` : ""}`;
+}
+
+function pageHref(filters: InvoiceFilters, page: number) {
+  return filterHref({ ...filters, page: String(page) });
 }
 
 function chipClass(active: boolean) {
@@ -80,7 +97,8 @@ export default async function InvoiceListPage({
   searchParams: Promise<InvoiceFilters>;
 }) {
   const filters = await searchParams;
-  const invoices = await fetchInvoices(filters);
+  const paged = await fetchInvoices(filters);
+  const invoices = paged.items;
   const activeFilter = filters.needs_review === "true" ? "needs_review" : filters.status ?? "all";
 
   return (
@@ -104,27 +122,27 @@ export default async function InvoiceListPage({
         }}
       >
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <Link href={filterHref({ vendor: filters.vendor })} className={chipClass(activeFilter === "all")}>All</Link>
-          <Link href={filterHref({ needs_review: "true", vendor: filters.vendor })} className={chipClass(activeFilter === "needs_review")}>Needs review</Link>
-          <Link href={filterHref({ status: "review", vendor: filters.vendor })} className={chipClass(activeFilter === "review")}>Review</Link>
-          <Link href={filterHref({ status: "approved", vendor: filters.vendor })} className={chipClass(activeFilter === "approved")}>Approved</Link>
-          <Link href={filterHref({ status: "exported", vendor: filters.vendor })} className={chipClass(activeFilter === "exported")}>Exported</Link>
-          <Link href={filterHref({ status: "redirect", vendor: filters.vendor })} className={chipClass(activeFilter === "redirect")}>Redirected</Link>
-          <Link href={filterHref({ status: "discarded", vendor: filters.vendor })} className={chipClass(activeFilter === "discarded")}>Discarded</Link>
+          <Link href={filterHref({ q: filters.q })} className={chipClass(activeFilter === "all")}>All</Link>
+          <Link href={filterHref({ needs_review: "true", q: filters.q })} className={chipClass(activeFilter === "needs_review")}>Needs review</Link>
+          <Link href={filterHref({ status: "review", q: filters.q })} className={chipClass(activeFilter === "review")}>Review</Link>
+          <Link href={filterHref({ status: "approved", q: filters.q })} className={chipClass(activeFilter === "approved")}>Approved</Link>
+          <Link href={filterHref({ status: "exported", q: filters.q })} className={chipClass(activeFilter === "exported")}>Exported</Link>
+          <Link href={filterHref({ status: "redirect", q: filters.q })} className={chipClass(activeFilter === "redirect")}>Redirected</Link>
+          <Link href={filterHref({ status: "discarded", q: filters.q })} className={chipClass(activeFilter === "discarded")}>Discarded</Link>
         </div>
 
         <form action="/invoices" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           {filters.status && <input type="hidden" name="status" value={filters.status} />}
           {filters.needs_review === "true" && <input type="hidden" name="needs_review" value="true" />}
           <input
-            name="vendor"
-            defaultValue={filters.vendor ?? ""}
-            placeholder="Search vendor"
+            name="q"
+            defaultValue={filters.q ?? ""}
+            placeholder="Search vendor or invoice #"
             className="input"
-            style={{ height: "34px", minWidth: "180px" }}
+            style={{ height: "34px", minWidth: "210px" }}
           />
           <button className="btn btn-ghost btn-sm" type="submit">Search</button>
-          {filters.vendor && <Link href={filterHref({ status: filters.status, needs_review: filters.needs_review })} className="btn btn-ghost btn-sm">Clear</Link>}
+          {filters.q && <Link href={filterHref({ status: filters.status, needs_review: filters.needs_review })} className="btn btn-ghost btn-sm">Clear</Link>}
         </form>
       </div>
 
@@ -184,6 +202,20 @@ export default async function InvoiceListPage({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {paged.pages > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "20px" }}>
+          {paged.page > 1 && (
+            <Link href={pageHref(filters, paged.page - 1)} className="btn btn-ghost btn-sm">← Prev</Link>
+          )}
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            Page {paged.page} of {paged.pages} &nbsp;·&nbsp; {paged.total} invoices
+          </span>
+          {paged.page < paged.pages && (
+            <Link href={pageHref(filters, paged.page + 1)} className="btn btn-ghost btn-sm">Next →</Link>
+          )}
         </div>
       )}
     </main>
