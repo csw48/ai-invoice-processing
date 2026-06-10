@@ -33,6 +33,19 @@ def _vat_band(rate: float, max_rate: float | None) -> str:
     return "low"
 
 
+def _csv_safe(value: str) -> str:
+    # Neutralize spreadsheet formula injection (OWASP CSV injection): cells
+    # starting with = + - @ tab or CR would execute when opened in Excel/Calc.
+    # Plain numbers (e.g. negative credit-note amounts) stay untouched.
+    if not value or value[0] not in ("=", "+", "-", "@", "\t", "\r"):
+        return value
+    try:
+        float(value)
+        return value
+    except ValueError:
+        return "'" + value
+
+
 def _money(value: float) -> str:
     # Pohoda expects a dot decimal separator and at most 2 decimals.
     return f"{round(float(value), 2):.2f}"
@@ -213,7 +226,7 @@ def format_invoice(enriched: EnrichedInvoice, connector: str, document_type: str
         ]
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
-        writer.writerow({key: _val(data, key) for key in fields})
+        writer.writerow({key: _csv_safe(_val(data, key)) for key in fields})
         return {"type": "csv", "document_type": document_type, "payload": output.getvalue()}
     if connector == "pohoda":
         return {"type": "pohoda", "document_type": document_type, "payload": _pohoda_xml(enriched, document_type, connector_config)}

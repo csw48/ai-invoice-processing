@@ -1,3 +1,4 @@
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
 from uuid import uuid4
@@ -77,7 +78,9 @@ async def upload_invoice(
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    filename = file.filename or "invoice.pdf"
+    # Basename only — a crafted filename must not traverse out of the
+    # per-invoice prefix in the storage key built below.
+    filename = PurePosixPath(file.filename or "invoice.pdf").name or "invoice.pdf"
     word_positions: list[dict] | None = None
     if filename.lower().endswith(".pdf"):
         try:
@@ -487,6 +490,46 @@ def export_invoice(
 _WEBHOOK_MAX_ATTEMPTS = 3
 
 
+def _resolve_host_ips(host: str) -> list[str]:
+    """Resolve a hostname to its IP addresses (separate function so tests can stub it)."""
+    import socket
+
+    infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    return [info[4][0] for info in infos]
+
+
+def _webhook_url_is_safe(url: str) -> bool:
+    """Allow only public http(s) webhook targets.
+
+    Blocks SSRF vectors: non-HTTP schemes (file://, ftp://), and hosts that
+    resolve to loopback, link-local (cloud metadata), private (RFC 1918) or
+    otherwise non-global addresses.
+    """
+    import ipaddress
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    try:
+        ips = _resolve_host_ips(parsed.hostname)
+    except OSError:
+        return False
+    if not ips:
+        return False
+    for raw in ips:
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            return False
+        if not ip.is_global:
+            return False
+    return True
+
+
 def _dispatch_webhook(invoice, config: ClientConfig) -> bool | None:
     """POST the invoice payload to the webhook URL from connector_config.
 
@@ -508,6 +551,11 @@ def _dispatch_webhook(invoice, config: ClientConfig) -> bool | None:
     url = config.connector_config.get("webhook_url") or config.connector_config.get("url")
     if not url:
         return None
+    if not _webhook_url_is_safe(str(url)):
+        raise HTTPException(
+            status_code=422,
+            detail="Webhook URL must be a public http(s) endpoint",
+        )
 
     body = json.dumps(invoice.formatted.get("payload", {})).encode()
     headers = {"Content-Type": "application/json", "X-Factura-Invoice-Id": str(invoice.invoice_id)}

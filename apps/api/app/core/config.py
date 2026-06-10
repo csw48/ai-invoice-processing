@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,18 @@ class Settings(BaseSettings):
     azure_doc_intel_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @model_validator(mode="after")
+    def _require_auth_in_production(self) -> "Settings":
+        # The API is its own trust boundary: refuse to start a production
+        # deployment with auth disabled instead of silently serving the
+        # "default" tenant (incl. webhook secrets in config) to anyone.
+        if self.app_env.lower() in ("production", "prod") and not self.enable_auth:
+            raise RuntimeError(
+                "ENABLE_AUTH must be true when APP_ENV is production — "
+                "the API would otherwise accept unauthenticated requests."
+            )
+        return self
 
 
 @lru_cache

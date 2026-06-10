@@ -317,6 +317,7 @@ def test_export_webhook_uses_active_connector_config(monkeypatch):
         sent_requests.append((request.full_url, request.data, dict(request.headers)))
         return FakeResponse()
 
+    monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\n"
@@ -369,6 +370,7 @@ def test_export_webhook_retries_on_failure(monkeypatch):
             raise urllib.error.URLError("connection refused")
         return FakeResponse()
 
+    monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
     monkeypatch.setattr("urllib.request.urlopen", flaky_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\n"
@@ -417,6 +419,7 @@ def test_export_webhook_signs_body_with_hmac_when_secret_set(monkeypatch):
         captured.append((request.data, dict(request.headers)))
         return FakeResponse()
 
+    monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-HMAC\n"
@@ -448,6 +451,7 @@ def test_export_webhook_permanent_failure_does_not_mark_exported(monkeypatch):
     def always_fail(request, timeout):
         raise urllib.error.URLError("down")
 
+    monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
     monkeypatch.setattr("urllib.request.urlopen", always_fail)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-FAIL\n"
@@ -713,3 +717,90 @@ def test_approve_backfills_missing_vendor_details():
     assert vendor["id"] == seeded["id"]
     assert vendor["vat_number"] == "SK1234567890"
     assert vendor["iban"] == "SK3112000000198742637541"
+
+
+def test_export_webhook_blocks_non_public_urls(monkeypatch):
+    """SSRF guard: file://, loopback and link-local targets are rejected with 422."""
+    client = _client()
+    # Webhook connector must be active at upload time so the invoice formats as webhook.
+    main_module._config_cache = {
+        ConfigRepository.DEFAULT_ID: ClientConfig(
+            output_connector="webhook",
+            connector_config={"webhook_url": "https://example.test/hook"},
+        )
+    }
+    pdf_bytes = _pdf_with(
+        "Firma Test s.r.o.\n"
+        "VAT: SK1234567890\n"
+        "Invoice number: INV-2026-SSRF\n"
+        "Invoice date: 07.05.2026\n"
+        "Subtotal: 100.00\n"
+        "VAT: 20.00\n"
+        "Total: 120.00 EUR\n"
+    )
+    upload = client.post(
+        "/api/invoices/upload",
+        files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")},
+    )
+    invoice_id = upload.json()["invoice_id"]
+
+    def attempt(url: str):
+        main_module._config_cache = {
+            ConfigRepository.DEFAULT_ID: ClientConfig(
+                output_connector="webhook",
+                connector_config={"webhook_url": url},
+            )
+        }
+        return client.post(f"/api/export/{invoice_id}")
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout: calls.append(req.full_url),
+    )
+
+    for url in (
+        "file:///etc/passwd",
+        "ftp://example.test/x",
+        "http://127.0.0.1:8000/api/config",
+        "http://localhost/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.5/internal",
+        "http://192.168.1.1/",
+    ):
+        response = attempt(url)
+        assert response.status_code == 422, url
+        assert "public http(s)" in response.json()["detail"]
+    assert calls == []  # no request ever left the building
+
+
+def test_csv_export_neutralizes_formula_injection():
+    from app.models import ConfidenceValue
+    from app.services.extract import extract_invoice_fields
+
+    extracted = extract_invoice_fields(
+        "Firma Test s.r.o.\nInvoice number: INV-1\nTotal: 120.00 EUR\n"
+    )
+    extracted.vendor_name = ConfidenceValue(value="=cmd|'/c calc'!A1", confidence=0.9)
+    extracted.subtotal = ConfidenceValue(value=-100.0, confidence=0.9)  # credit note
+
+    from app.models import EnrichedInvoice
+    from app.services.formatters import format_invoice
+
+    csv_payload = format_invoice(EnrichedInvoice(extracted=extracted), "csv")["payload"]
+    data_row = csv_payload.splitlines()[1]
+    assert "'=cmd" in data_row  # formula neutralized
+    assert "'-100" not in data_row and "-100" in data_row  # numbers untouched
+
+
+def test_upload_filename_cannot_traverse_storage_prefix():
+    client = _client()
+    pdf_bytes = _pdf_with("Firma Test s.r.o.\nInvoice number: INV-1\nTotal: 120.00 EUR\n")
+    response = client.post(
+        "/api/invoices/upload",
+        files={"file": ("../../other-tenant/evil.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200
+    file_path = response.json()["file_path"]
+    assert ".." not in file_path
+    assert file_path.endswith("/evil.pdf")
