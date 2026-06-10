@@ -163,10 +163,20 @@ export default function InvoicePdfViewer({ fileUrl, highlights, scale = 1.5 }: P
          
         await (page.render as any)({ canvasContext: ctx, viewport }).promise;
 
-        const textContent = await page.getTextContent();
+        // getTextContent() in pdfjs v5 uses `for await...of` on a ReadableStream
+        // internally, which requires ReadableStream[Symbol.asyncIterator] — not
+        // supported in older browsers. Use streamTextContent + getReader() instead.
+        const stream = page.streamTextContent();
+        const reader = (stream as unknown as ReadableStream<{ items: TextItem[] }>).getReader();
+        const allItems: TextItem[] = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value?.items) allItems.push(...value.items);
+        }
         result.push({
           canvas,
-          items: textContent.items as TextItem[],
+          items: allItems,
           vt: viewport.transform as number[],
           width: canvas.width,
           height: canvas.height,
