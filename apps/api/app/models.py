@@ -54,6 +54,12 @@ class LineItem(BaseModel):
     total: float = 0
 
 
+class TaxLine(BaseModel):
+    rate: float = 0.0    # VAT rate as decimal (e.g. 0.23 for 23%)
+    base: float = 0.0    # net base amount for this rate band
+    amount: float = 0.0  # tax amount for this rate band
+
+
 class ExtractedInvoice(BaseModel):
     vendor_name: ConfidenceValue = Field(default_factory=ConfidenceValue)
     vendor_ico: ConfidenceValue = Field(default_factory=ConfidenceValue)
@@ -79,6 +85,8 @@ class ExtractedInvoice(BaseModel):
     recipient_city: ConfidenceValue = Field(default_factory=ConfidenceValue)
     recipient_country: ConfidenceValue = Field(default_factory=ConfidenceValue)
     line_items: list[LineItem] = Field(default_factory=list)
+    tax_lines: list[TaxLine] = Field(default_factory=list)
+    amount_due: ConfidenceValue = Field(default_factory=ConfidenceValue)
 
 
 class ValidationIssue(BaseModel):
@@ -120,6 +128,8 @@ class EnrichedInvoice(BaseModel):
     vendor_metadata: dict[str, Any] = Field(default_factory=dict)
     duplicate: bool = False
     category: str | None = None
+    vat_mismatch: bool = False
+    stored_vat: str | None = None
 
 
 class ProcessedInvoice(BaseModel):

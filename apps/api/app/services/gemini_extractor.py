@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
-from app.models import ConfidenceValue, ExtractedInvoice, LineItem
+from app.models import ConfidenceValue, ExtractedInvoice, LineItem, TaxLine
 from app.services.normalize import normalize_number
 
 
@@ -52,6 +52,19 @@ EXTRACTION_SCHEMA = {
                 "required": ["description", "qty", "unit_price", "vat_rate", "total"],
             },
         },
+        "tax_lines": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "rate": {"type": "number"},
+                    "base": {"type": "number"},
+                    "amount": {"type": "number"},
+                },
+                "required": ["rate", "base", "amount"],
+            },
+        },
+        "amount_due": {"type": "object", "properties": {"value": {"type": "number", "nullable": True}, "confidence": {"type": "number"}}, "required": ["value", "confidence"]},
     },
     "required": [
         "vendor_name", "vendor_ico", "vendor_vat", "vendor_iban", "invoice_number",
@@ -59,7 +72,7 @@ EXTRACTION_SCHEMA = {
         "currency", "po_number", "cost_center",
         "recipient_name", "recipient_vat", "recipient_address",
         "recipient_postcode", "recipient_city", "recipient_country",
-        "line_items",
+        "line_items", "tax_lines", "amount_due",
     ],
 }
 
@@ -76,6 +89,8 @@ Rules:
 - vendor_ico is the company registration number (IČO/IČ — typically 6-8 digits, NOT the VAT number).
 - vendor_vat is the VAT/tax ID (IČ DPH / DIČ — Slovak format: SK + 10 digits).
 - recipient_* describes the BUYER (odberateľ/customer) the invoice is addressed to — a DIFFERENT entity from the vendor. Take it from where a company name and full postal address appear together; never from the footer and never from the party that holds the bank/IBAN details (that is the vendor). Split the address block into recipient_address (street), recipient_postcode, recipient_city; recipient_country as ISO ALPHA-2 (SK, DE, AT).
+- tax_lines is an array of VAT band breakdowns. Include one entry per distinct VAT rate on the invoice, with rate (decimal, e.g. 0.23 for 23%), base (net amount for that band), and amount (tax amount for that band). Leave empty if no breakdown is visible.
+- amount_due is the actual amount owed — equals total_amount unless a prepayment or credit reduces what is outstanding.
 - Be conservative with confidence: 0.9+ only if the field is explicit and unambiguous.
 
 Invoice text:
@@ -116,6 +131,15 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         for li in (data.get("line_items") or [])
     ]
 
+    tax_lines = [
+        TaxLine(
+            rate=float(tl.get("rate") or 0),
+            base=float(tl.get("base") or 0),
+            amount=float(tl.get("amount") or 0),
+        )
+        for tl in (data.get("tax_lines") or [])
+    ]
+
     return ExtractedInvoice(
         vendor_name=cv("vendor_name"),
         vendor_ico=cv("vendor_ico"),
@@ -138,6 +162,8 @@ def parse_gemini_response(payload: str) -> ExtractedInvoice:
         recipient_city=cv("recipient_city"),
         recipient_country=cv("recipient_country"),
         line_items=line_items,
+        tax_lines=tax_lines,
+        amount_due=cv("amount_due"),
     )
 
 

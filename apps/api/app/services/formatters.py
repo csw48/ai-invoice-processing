@@ -135,6 +135,15 @@ def _pohoda_xml(enriched: EnrichedInvoice, document_type: str = "invoice", conne
             SubElement(home_item, "typ:unitPrice").text = _money(li.unit_price or 0)
             SubElement(home_item, "typ:price").text = _money(base)
             SubElement(home_item, "typ:priceVAT").text = _money(vat)
+    elif enriched.extracted.tax_lines:
+        # No line items but tax_lines extracted — build band breakdown from them.
+        tl_rates = [tl.rate for tl in enriched.extracted.tax_lines if tl.rate]
+        tl_max_rate = max(tl_rates) if tl_rates else None
+        for tl in enriched.extracted.tax_lines:
+            band = _vat_band(tl.rate, tl_max_rate)
+            acc = bands.setdefault(band, {"base": 0.0, "vat": 0.0})
+            acc["base"] += tl.base
+            acc["vat"] += tl.amount
 
     # ── Summary ─────────────────────────────────────────────────────
     summary = SubElement(invoice, "inv:invoiceSummary")

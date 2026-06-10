@@ -96,3 +96,77 @@ def test_no_false_duplicate_when_keys_missing():
     )
     result = enrich_invoice(blank, vendors, invoices, CLIENT)
     assert result.duplicate is False
+
+
+def test_vat_mismatch_flagged_on_name_lookup():
+    vendors = InMemoryVendorRepository()
+    vendors.create(
+        VendorCreate(name="ACME s.r.o.", vat_number="SK9999999999", category="supplies"),
+        CLIENT,
+    )
+    # Extracted VAT differs from stored VAT; vendor found by name.
+    result = enrich_invoice(
+        _extracted(vendor_vat=ConfidenceValue(value="SK1234567890", confidence=0.9)),
+        vendors,
+        None,
+        CLIENT,
+    )
+    assert result.vat_mismatch is True
+    assert result.stored_vat == "SK9999999999"
+
+
+def test_no_vat_mismatch_when_vat_matches():
+    vendors = InMemoryVendorRepository()
+    vendors.create(
+        VendorCreate(name="ACME s.r.o.", vat_number="SK1234567890"),
+        CLIENT,
+    )
+    result = enrich_invoice(_extracted(), vendors, None, CLIENT)
+    assert result.vat_mismatch is False
+    assert result.stored_vat is None
+
+
+def test_fuzzy_duplicate_near_number_match():
+    invoices = InMemoryInvoiceRepository()
+    vendors = InMemoryVendorRepository()
+    from app.services.pipeline import process_invoice
+    from app.models import ClientConfig
+
+    first = process_invoice(
+        "ACME s.r.o.\nVAT: SK1234567890\nInvoice number: INV001\nTotal: 10.00 EUR",
+        ClientConfig(output_connector="json"),
+        CLIENT,
+    )
+    invoices.save(first, file_path="m://x", raw_text="x", client_id=CLIENT)
+
+    # "INV-001" vs "INV001" — similarity ~0.92, should still flag as duplicate.
+    result = enrich_invoice(
+        _extracted(invoice_number=ConfidenceValue(value="INV-001", confidence=0.95)),
+        vendors,
+        invoices,
+        CLIENT,
+    )
+    assert result.duplicate is True
+
+
+def test_no_duplicate_when_number_too_different():
+    invoices = InMemoryInvoiceRepository()
+    vendors = InMemoryVendorRepository()
+    from app.services.pipeline import process_invoice
+    from app.models import ClientConfig
+
+    first = process_invoice(
+        "ACME s.r.o.\nVAT: SK1234567890\nInvoice number: INV-2024-001\nTotal: 10.00 EUR",
+        ClientConfig(output_connector="json"),
+        CLIENT,
+    )
+    invoices.save(first, file_path="m://x", raw_text="x", client_id=CLIENT)
+
+    # Completely different number — should not be a duplicate.
+    result = enrich_invoice(
+        _extracted(invoice_number=ConfidenceValue(value="INV-2025-999", confidence=0.95)),
+        vendors,
+        invoices,
+        CLIENT,
+    )
+    assert result.duplicate is False

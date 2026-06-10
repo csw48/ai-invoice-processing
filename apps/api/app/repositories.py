@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -13,6 +14,10 @@ from app.models import (
     Vendor,
     VendorCreate,
 )
+
+
+def _number_sim(a: str, b: str) -> float:
+    return SequenceMatcher(None, (a or "").lower(), (b or "").lower()).ratio()
 
 
 class InvoiceRepository(Protocol):
@@ -38,7 +43,14 @@ class InvoiceRepository(Protocol):
         ...
 
     def is_duplicate(
-        self, invoice_number: str, vendor_vat: str, client_id: str, days: int = 90
+        self,
+        invoice_number: str,
+        vendor_vat: str | None,
+        client_id: str,
+        days: int = 90,
+        invoice_date: str | None = None,
+        net_amount: float | None = None,
+        vendor_name: str | None = None,
     ) -> bool:
         ...
 
@@ -94,10 +106,16 @@ class InMemoryInvoiceRepository:
         return True
 
     def is_duplicate(
-        self, invoice_number: str, vendor_vat: str, client_id: str, days: int = 90
+        self,
+        invoice_number: str,
+        vendor_vat: str | None,
+        client_id: str,
+        days: int = 90,
+        invoice_date: str | None = None,
+        net_amount: float | None = None,
+        vendor_name: str | None = None,
     ) -> bool:
-        # Both keys must be present; otherwise None == None would flag a false duplicate.
-        if not invoice_number or not vendor_vat:
+        if not invoice_number:
             return False
         for invoice in self._invoices.values():
             if invoice.status == InvoiceStatus.deleted:
@@ -105,14 +123,39 @@ class InMemoryInvoiceRepository:
             if self._owner.get(invoice.invoice_id) != client_id:
                 continue
             inv_num = invoice.extracted.invoice_number
+            if inv_num is None or inv_num.value is None:
+                continue
+            if _number_sim(invoice_number, str(inv_num.value)) < 0.9:
+                continue
+            # Vendor identity: exact VAT match OR name similarity ≥ 0.85.
             inv_vat = invoice.extracted.vendor_vat
-            if (
-                inv_num is not None
-                and inv_vat is not None
-                and inv_num.value == invoice_number
-                and inv_vat.value == vendor_vat
-            ):
-                return True
+            inv_name = invoice.extracted.vendor_name
+            vat_match = (
+                vendor_vat
+                and inv_vat
+                and inv_vat.value
+                and str(inv_vat.value).lower() == vendor_vat.lower()
+            )
+            name_match = (
+                vendor_name
+                and inv_name
+                and inv_name.value
+                and _number_sim(vendor_name, str(inv_name.value)) >= 0.85
+            )
+            if not vat_match and not name_match:
+                continue
+            # Date: if both present, must match exactly.
+            if invoice_date:
+                inv_date = invoice.extracted.invoice_date
+                if inv_date and inv_date.value and str(inv_date.value) != invoice_date:
+                    continue
+            # Net amount: if both present, must be within 0.01.
+            if net_amount is not None:
+                inv_net = invoice.extracted.subtotal
+                if inv_net and inv_net.value is not None:
+                    if abs(float(inv_net.value) - net_amount) > 0.01:
+                        continue
+            return True
         return False
 
     def file_path(self, invoice_id: UUID) -> str | None:
@@ -197,10 +240,16 @@ class SupabaseInvoiceRepository:
         return len(result.data) > 0
 
     def is_duplicate(
-        self, invoice_number: str, vendor_vat: str, client_id: str, days: int = 90
+        self,
+        invoice_number: str,
+        vendor_vat: str | None,
+        client_id: str,
+        days: int = 90,
+        invoice_date: str | None = None,
+        net_amount: float | None = None,
+        vendor_name: str | None = None,
     ) -> bool:
-        # Both keys must be present; otherwise None == None would flag a false duplicate.
-        if not invoice_number or not vendor_vat:
+        if not invoice_number:
             return False
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=days)).isoformat()
         result = (
@@ -214,9 +263,31 @@ class SupabaseInvoiceRepository:
         for row in result.data or []:
             extracted = row.get("extracted") or {}
             inv_num = (extracted.get("invoice_number") or {}).get("value")
+            if not inv_num or _number_sim(invoice_number, str(inv_num)) < 0.9:
+                continue
             inv_vat = (extracted.get("vendor_vat") or {}).get("value")
-            if inv_num == invoice_number and inv_vat == vendor_vat:
-                return True
+            inv_name = (extracted.get("vendor_name") or {}).get("value")
+            vat_match = vendor_vat and inv_vat and str(inv_vat).lower() == vendor_vat.lower()
+            name_match = (
+                vendor_name
+                and inv_name
+                and _number_sim(vendor_name, str(inv_name)) >= 0.85
+            )
+            if not vat_match and not name_match:
+                continue
+            if invoice_date:
+                inv_date = (extracted.get("invoice_date") or {}).get("value")
+                if inv_date and str(inv_date) != invoice_date:
+                    continue
+            if net_amount is not None:
+                inv_net = (extracted.get("subtotal") or {}).get("value")
+                if inv_net is not None:
+                    try:
+                        if abs(float(inv_net) - net_amount) > 0.01:
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+            return True
         return False
 
 

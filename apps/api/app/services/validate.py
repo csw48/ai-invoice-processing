@@ -115,6 +115,17 @@ def validate_invoice(extracted: ExtractedInvoice, config: ClientConfig) -> Valid
                 message="Net plus tax does not equal gross",
             ))
 
+    # If tax_lines are present, their amounts should sum to vat_amount.
+    if extracted.tax_lines and _is_number(tax):
+        tax_line_sum = round(sum(tl.amount for tl in extracted.tax_lines), 2)
+        if abs(tax_line_sum - round(tax, 2)) > 0.01:
+            issues.append(ValidationIssue(
+                field="vat_amount",
+                severity="warning",
+                code="E02",
+                message=f"Tax lines sum ({tax_line_sum}) differs from vat_amount ({round(tax, 2)})",
+            ))
+
     # E04 — incomplete supplier (sender) data. Warning so partial extractions stay
     # approvable; the vendor name is the minimum, plus VAT where the country uses one.
     supplier_missing = []

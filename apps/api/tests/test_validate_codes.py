@@ -97,3 +97,27 @@ def test_required_loop_skips_non_scalar_field_without_crashing():
     config = ClientConfig(fields_required=["vendor_name", "line_items"])
     report = validate_invoice(_full(), config)
     assert isinstance(report.issues, list)
+
+
+def test_tax_lines_sum_mismatch_emits_e02_warning():
+    from app.models import TaxLine
+    # tax_lines sum to 25, but vat_amount = 20 → mismatch.
+    extracted = _full(
+        vat_amount=ConfidenceValue(value=20.0, confidence=0.95),
+        tax_lines=[TaxLine(rate=0.25, base=100.0, amount=25.0)],
+    )
+    report = validate_invoice(extracted, ClientConfig(country_code="SK"))
+    e02 = [i for i in report.issues if i.code == "E02"]
+    assert e02 and e02[0].severity == "warning"
+
+
+def test_tax_lines_sum_matches_no_extra_e02():
+    from app.models import TaxLine
+    # tax_lines sum to 20, matches vat_amount = 20 → no extra E02.
+    extracted = _full(
+        vat_amount=ConfidenceValue(value=20.0, confidence=0.95),
+        tax_lines=[TaxLine(rate=0.20, base=100.0, amount=20.0)],
+    )
+    report = validate_invoice(extracted, ClientConfig(country_code="SK"))
+    e02_tax_line = [i for i in report.issues if i.code == "E02" and "Tax lines" in i.message]
+    assert not e02_tax_line
