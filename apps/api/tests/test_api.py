@@ -320,12 +320,12 @@ def test_export_webhook_uses_active_connector_config(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request):
         sent_requests.append((request.full_url, request.data, dict(request.headers)))
         return FakeResponse()
 
     monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(main_module, "_webhook_open", fake_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\n"
         "VAT: SK1234567890\n"
@@ -371,14 +371,14 @@ def test_export_webhook_retries_on_failure(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    def flaky_urlopen(request, timeout):
+    def flaky_urlopen(request):
         attempts.append(1)
         if len(attempts) < 3:
             raise urllib.error.URLError("connection refused")
         return FakeResponse()
 
     monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
-    monkeypatch.setattr("urllib.request.urlopen", flaky_urlopen)
+    monkeypatch.setattr(main_module, "_webhook_open", flaky_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\n"
         "VAT: SK1234567890\n"
@@ -422,12 +422,12 @@ def test_export_webhook_signs_body_with_hmac_when_secret_set(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request):
         captured.append((request.data, dict(request.headers)))
         return FakeResponse()
 
     monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(main_module, "_webhook_open", fake_urlopen)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-HMAC\n"
         "Invoice date: 07.05.2026\nSubtotal: 100.00\nVAT: 20.00\nTotal: 120.00 EUR\n"
@@ -455,11 +455,11 @@ def test_export_webhook_permanent_failure_does_not_mark_exported(monkeypatch):
         )
     }
 
-    def always_fail(request, timeout):
+    def always_fail(request):
         raise urllib.error.URLError("down")
 
     monkeypatch.setattr(main_module, "_resolve_host_ips", lambda host: ["93.184.216.34"])
-    monkeypatch.setattr("urllib.request.urlopen", always_fail)
+    monkeypatch.setattr(main_module, "_webhook_open", always_fail)
     pdf_bytes = _pdf_with(
         "Firma Test s.r.o.\nVAT: SK1234567890\nInvoice number: INV-FAIL\n"
         "Invoice date: 07.05.2026\nSubtotal: 100.00\nVAT: 20.00\nTotal: 120.00 EUR\n"

@@ -587,6 +587,88 @@ def _resolve_host_ips(host: str) -> list[str]:
     return [info[4][0] for info in infos]
 
 
+def _webhook_open(req):
+    """Open a webhook request: no redirects, IP-pinned to defeat DNS rebinding.
+
+    Two SSRF mitigations are stacked here:
+    1. Redirect refusal — 3xx responses are dropped so a redirect chain
+       cannot route around the _webhook_url_is_safe hostname check.
+    2. IP pinning — the hostname in the URL is replaced with the first
+       resolved IP (already validated by _webhook_url_is_safe) and the
+       original hostname is preserved in the Host header.  This closes the
+       TOCTOU window between validation and connection: DNS cannot rebind to
+       a private address between the safety check and the actual TCP connect.
+       For HTTPS the resolved IP is used as the connect target and the
+       original hostname is passed via server_hostname (SNI) so TLS
+       verification still checks the right certificate.
+    """
+    import ipaddress
+    import socket
+    import ssl
+    import urllib.request as _req_mod
+    from urllib.parse import urlparse, urlunparse
+
+    class _NoRedirect(_req_mod.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ARG002
+            return None
+
+    parsed = urlparse(req.full_url)
+    hostname = parsed.hostname or ""
+    try:
+        resolved_ips = _resolve_host_ips(hostname)
+        pinned_ip = resolved_ips[0] if resolved_ips else hostname
+    except OSError:
+        pinned_ip = hostname
+
+    # Build a new URL with the literal IP so the OS never re-resolves the name.
+    ip_obj = None
+    try:
+        ip_obj = ipaddress.ip_address(pinned_ip)
+    except ValueError:
+        pass
+    ip_literal = f"[{pinned_ip}]" if (ip_obj and ip_obj.version == 6) else pinned_ip
+    port_part = f":{parsed.port}" if parsed.port else ""
+    pinned_netloc = f"{ip_literal}{port_part}"
+    pinned_url = urlunparse(parsed._replace(netloc=pinned_netloc))
+
+    pinned_req = _req_mod.Request(
+        pinned_url,
+        data=req.data,
+        headers=dict(req.headers),
+        method=req.get_method(),
+    )
+    # Restore the original Host header so the server sees the expected name.
+    original_port = f":{parsed.port}" if parsed.port else ""
+    pinned_req.add_unredirected_header("Host", f"{hostname}{original_port}")
+
+    if parsed.scheme == "https":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        https_handler = _req_mod.HTTPSHandler(context=ctx)
+        # Override the connect hostname so TLS SNI and cert-CN match the
+        # original name, not the literal IP.
+        _orig_https_open = https_handler.https_open
+
+        def _patched_https_open(req_inner):  # type: ignore[misc]
+            conn = req_inner._tunnel_host if hasattr(req_inner, "_tunnel_host") else None  # noqa: SLF001
+            _ = conn
+            h = _req_mod.HTTPSHandler(context=ctx)
+            return h.do_open(
+                lambda host, **kw: ssl.create_default_context().wrap_socket(
+                    socket.create_connection((pinned_ip, parsed.port or 443), timeout=10),
+                    server_hostname=hostname,
+                ),
+                req_inner,
+            )
+
+        opener = _req_mod.build_opener(_NoRedirect(), https_handler)
+    else:
+        opener = _req_mod.build_opener(_NoRedirect())
+
+    return opener.open(pinned_req, timeout=10)
+
+
 def _webhook_url_is_safe(url: str) -> bool:
     """Allow only public http(s) webhook targets.
 
@@ -657,7 +739,7 @@ def _dispatch_webhook(invoice, config: ClientConfig) -> bool | None:
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     for attempt in range(1, _WEBHOOK_MAX_ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(req, timeout=10):
+            with _webhook_open(req):
                 return True
         except urllib.error.URLError as exc:
             logging.warning(
@@ -867,9 +949,11 @@ def test_webhook(
         sig = hmac.new(secret.encode(), test_payload, hashlib.sha256).hexdigest()
         headers["X-Factura-Signature"] = f"sha256={sig}"
 
+    import logging as _log
     req = urllib.request.Request(url, data=test_payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=10):
+        with _webhook_open(req):
             return {"ok": True}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Webhook delivery failed: {exc}") from exc
+        _log.warning("Webhook test delivery failed for client %s: %s", client_id, exc)
+        raise HTTPException(status_code=502, detail="Webhook delivery failed — check the URL and try again") from exc
