@@ -138,7 +138,9 @@ export default function InvoicePdfViewer({ fileUrl, highlights, scale = 1.5 }: P
     setLoading(true);
     setError(null);
     try {
-      const pdfjsLib = await import("pdfjs-dist");
+      // Use the legacy build — the standard v5 build requires ReadableStream as
+      // an async iterator (ES2023) which is absent in some browser environments.
+      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
       pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
       // Pre-fetch as ArrayBuffer to avoid pdfjs streaming/ReadableStream issues
