@@ -158,7 +158,7 @@ export default function InvoicePdfViewer({ fileUrl, highlights, scale = 1.5 }: P
         canvas.height = Math.floor(viewport.height);
         const ctx = canvas.getContext("2d")!;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         await (page.render as any)({ canvasContext: ctx, viewport }).promise;
 
         const textContent = await page.getTextContent();
@@ -176,7 +176,7 @@ export default function InvoicePdfViewer({ fileUrl, highlights, scale = 1.5 }: P
     } finally {
       setLoading(false);
     }
-  }, [fileUrl, scale]); // highlights NOT a dependency — rects computed below
+  }, [fileUrl, scale, authHeaders]); // highlights NOT a dependency — rects computed below
 
   useEffect(() => { renderPdf(); }, [renderPdf]);
 
