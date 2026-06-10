@@ -7,6 +7,8 @@ type Stats = {
   invalid: number;
   hours_saved: number;
   accuracy_rate: number;
+  extraction_accuracy?: number | null;
+  field_corrections?: { field: string; count: number; rate: number }[];
   daily_counts: { date: string; count: number }[];
   agent_performance: { agent: string; avg_ms: number }[];
 };
@@ -15,7 +17,90 @@ export function StatsCharts({ stats }: { stats: Stats }) {
   return (
     <div style={{ marginTop: "32px", display: "flex", flexDirection: "column", gap: "24px" }}>
       <VolumeChart data={stats.daily_counts ?? []} />
+      <FieldCorrectionsChart
+        data={stats.field_corrections ?? []}
+        extractionAccuracy={stats.extraction_accuracy ?? null}
+      />
       <AgentPerformanceChart data={stats.agent_performance ?? []} />
+    </div>
+  );
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  vendor_name: "Vendor", vendor_ico: "IČO", vendor_vat: "IČ DPH", vendor_iban: "IBAN",
+  invoice_number: "Invoice number", invoice_date: "Invoice date", delivered_at: "Delivery date",
+  due_date: "Due date", subtotal: "Subtotal", vat_amount: "VAT amount", total_amount: "Total",
+  amount_due: "Amount due", currency: "Currency", po_number: "PO number", cost_center: "Cost center",
+  recipient_name: "Recipient", recipient_vat: "Recipient IČ DPH", recipient_address: "Recipient address",
+  recipient_postcode: "Recipient postcode", recipient_city: "Recipient city", recipient_country: "Recipient country",
+};
+
+function FieldCorrectionsChart({
+  data,
+  extractionAccuracy,
+}: {
+  data: { field: string; count: number; rate: number }[];
+  extractionAccuracy: number | null;
+}) {
+  const subtitle =
+    extractionAccuracy !== null
+      ? `${Math.round(extractionAccuracy * 100)}% of extracted invoices needed no manual correction`
+      : null;
+
+  if (data.length === 0) {
+    return (
+      <div className="card">
+        <p className="card-title">Extraction Accuracy</p>
+        {subtitle && (
+          <p style={{ marginTop: "4px", fontSize: "12px", color: "var(--text-muted)" }}>{subtitle}</p>
+        )}
+        <div className="empty-state">No manual corrections recorded yet</div>
+      </div>
+    );
+  }
+
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
+
+  return (
+    <div className="card">
+      <p className="card-title">Extraction Accuracy</p>
+      {subtitle && (
+        <p style={{ marginTop: "4px", fontSize: "12px", color: "var(--text-muted)" }}>{subtitle}</p>
+      )}
+      <p style={{ marginTop: "12px", fontSize: "11px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+        Most corrected fields
+      </p>
+      <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        {data.map(({ field, count, rate }) => (
+          <div
+            key={field}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "140px 1fr 110px",
+              gap: "12px",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              {FIELD_LABELS[field] ?? field}
+            </span>
+            <div style={{ height: "6px", background: "var(--surface-raised)", borderRadius: "3px", overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${((count / maxCount) * 100).toFixed(1)}%`,
+                  background: "var(--warning)",
+                  borderRadius: "3px",
+                  transition: "width 0.6s ease",
+                }}
+              />
+            </div>
+            <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "right" }}>
+              {count}× ({Math.round(rate * 100)}%)
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

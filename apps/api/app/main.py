@@ -204,6 +204,7 @@ def _rebuild_processed_invoice(
         file_path=invoice.file_path,
         raw_text=invoice.raw_text,
         word_positions=invoice.word_positions,
+        edited_fields=invoice.edited_fields,
     )
 
 
@@ -248,6 +249,14 @@ def _learn_vendor_from_invoice(
     if existing is None:
         existing = vendor_repository.find_by_name(str(vendor_name), client_id)
     if existing is not None:
+        # Backfill details the stored record is missing — the KB improves with use.
+        backfill: dict = {}
+        if vendor_vat and not existing.vat_number:
+            backfill["vat_number"] = str(vendor_vat)
+        if vendor_iban and not existing.iban:
+            backfill["iban"] = str(vendor_iban)
+        if backfill:
+            vendor_repository.update(existing.id, backfill, client_id)
         return
 
     vendor_repository.create(
@@ -298,17 +307,26 @@ def update_invoice_fields(
     _, invoice = _get_visible_invoice(invoice_id, repository, client_id)
     extracted = invoice.extracted.model_copy(deep=True)
 
+    changed: list[str] = []
     for field, value in fields.items():
         if field not in ExtractedInvoice.model_fields:
             raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
         current = getattr(extracted, field)
         if not isinstance(current, ConfidenceValue):
             raise HTTPException(status_code=400, detail=f"Field is not editable: {field}")
+        new_value = _coerce_field_value(field, value)
+        if new_value != current.value:
+            changed.append(field)
         setattr(
             extracted,
             field,
-            ConfidenceValue(value=_coerce_field_value(field, value), confidence=1.0),
+            ConfidenceValue(value=new_value, confidence=1.0),
         )
+
+    if changed:
+        invoice = invoice.model_copy(update={
+            "edited_fields": invoice.edited_fields + [f for f in changed if f not in invoice.edited_fields],
+        })
 
     updated = _rebuild_processed_invoice(invoice, extracted, repository, vendor_repository, config, client_id)
     saved = repository.save(
@@ -554,10 +572,20 @@ def get_stats(
     invoices = repository.list(client_id, limit=10_000)
     by_status: dict[str, int] = {}
     valid_count = 0
+    field_edit_counts: dict[str, int] = {}
+    edited_invoices = 0
+    extracted_total = 0
     for inv in invoices:
         by_status[inv.status.value] = by_status.get(inv.status.value, 0) + 1
         if inv.validation.valid:
             valid_count += 1
+        # Extraction accuracy only counts documents the pipeline extracted.
+        if inv.formatted.get("type") != "skipped":
+            extracted_total += 1
+            if inv.edited_fields:
+                edited_invoices += 1
+                for field in inv.edited_fields:
+                    field_edit_counts[field] = field_edit_counts.get(field, 0) + 1
     total = len(invoices)
 
     hours_saved = round(total * 15 / 60, 1)
@@ -610,6 +638,18 @@ def get_stats(
     except Exception:
         pass
 
+    field_corrections = [
+        {
+            "field": field,
+            "count": count,
+            "rate": round(count / extracted_total, 3) if extracted_total else 0.0,
+        }
+        for field, count in sorted(field_edit_counts.items(), key=lambda kv: -kv[1])
+    ]
+    extraction_accuracy = (
+        round(1 - edited_invoices / extracted_total, 3) if extracted_total else None
+    )
+
     return {
         "total": total,
         "by_status": by_status,
@@ -617,6 +657,8 @@ def get_stats(
         "invalid": total - valid_count,
         "hours_saved": hours_saved,
         "accuracy_rate": accuracy_rate,
+        "extraction_accuracy": extraction_accuracy,
+        "field_corrections": field_corrections,
         "daily_counts": daily_counts,
         "agent_performance": agent_performance,
     }

@@ -176,6 +176,7 @@ def _row_to_invoice(row: dict) -> ProcessedInvoice:
         file_path=row.get("file_path"),
         raw_text=row.get("raw_text"),
         word_positions=row.get("word_positions"),
+        edited_fields=row.get("edited_fields") or [],
     )
 
 
@@ -198,6 +199,7 @@ class SupabaseInvoiceRepository:
             "enriched": invoice.enriched.model_dump(mode="json"),
             "formatted": invoice.formatted,
             "country_code": invoice.country_code,
+            "edited_fields": invoice.edited_fields,
         }
         if word_positions is not None:
             row["word_positions"] = word_positions
@@ -309,6 +311,9 @@ class VendorRepository(Protocol):
     def find_by_name(self, name: str, client_id: str) -> "Vendor | None":
         ...
 
+    def update(self, vendor_id: UUID, fields: dict, client_id: str) -> "Vendor | None":
+        ...
+
 
 class InMemoryVendorRepository:
     """In-memory vendor implementation used by tests and local development."""
@@ -331,6 +336,14 @@ class InMemoryVendorRepository:
             return False
         del self._vendors[vendor_id]
         return True
+
+    def update(self, vendor_id: UUID, fields: dict, client_id: str) -> "Vendor | None":
+        vendor = self._vendors.get(vendor_id)
+        if vendor is None or vendor.client_id != client_id:
+            return None
+        updated = vendor.model_copy(update=fields)
+        self._vendors[vendor_id] = updated
+        return updated
 
     def find_by_vat(self, vat_number: str, client_id: str) -> "Vendor | None":
         for vendor in self._vendors.values():
@@ -402,6 +415,19 @@ class SupabaseVendorRepository:
             .execute()
         )
         return len(result.data) > 0
+
+    def update(self, vendor_id: UUID, fields: dict, client_id: str) -> "Vendor | None":
+        result = (
+            self._client.table("vendors")
+            .update(fields)
+            .eq("id", str(vendor_id))
+            .eq("client_id", client_id)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        return _row_to_vendor(rows[0])
 
     def find_by_vat(self, vat_number: str, client_id: str) -> "Vendor | None":
         result = (

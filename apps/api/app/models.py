@@ -144,6 +144,8 @@ class ProcessedInvoice(BaseModel):
     file_path: str | None = None
     raw_text: str | None = None
     word_positions: list[dict] | None = None
+    # Field keys a reviewer manually corrected — feeds per-field accuracy stats.
+    edited_fields: list[str] = Field(default_factory=list)
 
 
 class VendorCreate(BaseModel):

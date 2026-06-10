@@ -9,6 +9,8 @@ type Stats = {
   invalid: number;
   hours_saved: number;
   accuracy_rate: number;
+  extraction_accuracy?: number | null;
+  field_corrections?: { field: string; count: number; rate: number }[];
   daily_counts: { date: string; count: number }[];
   agent_performance: { agent: string; avg_ms: number }[];
 };
@@ -26,6 +28,8 @@ async function fetchStats(): Promise<Stats> {
     invalid: 0,
     hours_saved: 0,
     accuracy_rate: 0,
+    extraction_accuracy: null,
+    field_corrections: [],
     daily_counts: [],
     agent_performance: [],
   };

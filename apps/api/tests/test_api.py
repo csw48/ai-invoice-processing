@@ -633,3 +633,83 @@ def test_reprocess_force_invoice_overrides_classification():
     # Extraction pipeline ran (no longer short-circuited).
     assert body["status"] != "discarded"
     assert body["formatted"]["type"] != "skipped"
+
+
+def test_field_edits_are_tracked_and_feed_stats():
+    client = _client()
+    pdf_bytes = _pdf_with(
+        "Firma Test s.r.o.\n"
+        "VAT: SK1234567890\n"
+        "Invoice number: INV-TRACK-001\n"
+        "Invoice date: 07.05.2026\n"
+        "Subtotal: 100.00\n"
+        "VAT: 20.00\n"
+        "Total: 120.00 EUR\n"
+    )
+    upload = client.post(
+        "/api/invoices/upload",
+        files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")},
+    )
+    invoice_id = upload.json()["invoice_id"]
+    assert upload.json()["edited_fields"] == []
+
+    # Edit two fields; resubmitting an unchanged value must not count as an edit.
+    response = client.put(
+        f"/api/invoices/{invoice_id}/fields",
+        json={
+            "total_amount": 125.0,
+            "vendor_name": "Corrected Vendor s.r.o.",
+            "invoice_number": "INV-TRACK-001",  # unchanged
+        },
+    )
+    assert response.status_code == 200
+    assert sorted(response.json()["edited_fields"]) == ["total_amount", "vendor_name"]
+
+    # A second edit of the same field is not double-counted.
+    response = client.put(
+        f"/api/invoices/{invoice_id}/fields",
+        json={"total_amount": 120.0},
+    )
+    assert sorted(response.json()["edited_fields"]) == ["total_amount", "vendor_name"]
+
+    stats = client.get("/api/stats").json()
+    assert stats["extraction_accuracy"] == 0.0  # 1 of 1 extracted invoices edited
+    corrections = {c["field"]: c for c in stats["field_corrections"]}
+    assert corrections["total_amount"]["count"] == 1
+    assert corrections["vendor_name"]["count"] == 1
+    assert corrections["total_amount"]["rate"] == 1.0
+
+
+def test_approve_backfills_missing_vendor_details():
+    client = _client()
+    # Seed a vendor known only by name — no VAT, no IBAN stored.
+    seeded = client.post(
+        "/api/vendors/",
+        json={"name": "Firma Test s.r.o.", "category": "services"},
+    ).json()
+
+    pdf_bytes = _pdf_with(
+        "Firma Test s.r.o.\n"
+        "VAT: SK1234567890\n"
+        "IBAN: SK3112000000198742637541\n"
+        "Invoice number: INV-LEARN-001\n"
+        "Invoice date: 07.05.2026\n"
+        "Subtotal: 100.00\n"
+        "VAT: 20.00\n"
+        "Total: 120.00 EUR\n"
+    )
+    upload = client.post(
+        "/api/invoices/upload",
+        files={"file": ("invoice.pdf", pdf_bytes, "application/pdf")},
+    )
+    invoice_id = upload.json()["invoice_id"]
+
+    approve = client.put(f"/api/invoices/{invoice_id}/approve")
+    assert approve.status_code == 200
+
+    vendors = client.get("/api/vendors/").json()
+    assert len(vendors) == 1  # backfilled, not duplicated
+    vendor = vendors[0]
+    assert vendor["id"] == seeded["id"]
+    assert vendor["vat_number"] == "SK1234567890"
+    assert vendor["iban"] == "SK3112000000198742637541"
