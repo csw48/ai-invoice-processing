@@ -685,6 +685,24 @@ def create_vendor(
     return repository.create(vendor, client_id).model_dump(mode="json")
 
 
+@app.put("/api/vendors/{vendor_id}")
+def update_vendor(
+    vendor_id: str,
+    body: dict,
+    repository: VendorRepository = Depends(get_vendor_repository),
+    client_id: str = Depends(get_client_id),
+):
+    parsed = _parse_invoice_id(vendor_id)
+    allowed = {"name", "vat_number", "iban", "category"}
+    fields = {k: v for k, v in body.items() if k in allowed}
+    if not fields:
+        raise HTTPException(status_code=400, detail="No updatable fields provided")
+    updated = repository.update(parsed, fields, client_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    return updated.model_dump(mode="json")
+
+
 @app.delete("/api/vendors/{vendor_id}", status_code=204)
 def delete_vendor(
     vendor_id: str,

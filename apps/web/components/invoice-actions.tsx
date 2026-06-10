@@ -23,6 +23,21 @@ type Props = {
   duplicate?: boolean;
 };
 
+function downloadExport(payload: string | object, type: string, invoiceId: string) {
+  const ext = type === "csv" ? "csv" : type === "pohoda" ? "xml" : "json";
+  const mime = type === "csv" ? "text/csv" : type === "pohoda" ? "application/xml" : "application/json";
+  const content = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `invoice-${invoiceId.slice(0, 8)}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function InvoiceActions({
   invoiceId,
   validationValid,
@@ -156,24 +171,28 @@ export default function InvoiceActions({
 
       {exportResult && (
         <div style={{ marginTop: "16px" }}>
-          <p style={{ marginBottom: "8px", fontSize: "13px" }}>
-            Export result{" "}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "13px" }}>Export result</span>
             <span className="badge badge-exported">{exportResult.export.type}</span>
             {exportResult.webhook_delivered !== undefined && (
-              <span
-                className="badge"
-                style={{
-                  marginLeft: "6px",
-                  color: exportResult.webhook_delivered ? "var(--success)" : "var(--error)",
-                }}
-              >
+              <span className="badge" style={{ color: exportResult.webhook_delivered ? "var(--success)" : "var(--error)" }}>
                 {exportResult.webhook_delivered ? "delivered" : "not delivered"}
               </span>
             )}
-          </p>
-          <pre className="code-block">
-            {JSON.stringify(exportResult.export.payload, null, 2)}
-          </pre>
+            {exportResult.export.type !== "webhook" && exportResult.export.payload !== undefined && (
+              <button
+                className="btn btn-accent btn-sm"
+                onClick={() => downloadExport(exportResult.export.payload!, exportResult.export.type, exportResult.invoice_id)}
+              >
+                Download .{exportResult.export.type === "pohoda" ? "xml" : exportResult.export.type === "csv" ? "csv" : "json"}
+              </button>
+            )}
+          </div>
+          {exportResult.export.type !== "pohoda" && exportResult.export.type !== "csv" && (
+            <pre className="code-block">
+              {JSON.stringify(exportResult.export.payload, null, 2)}
+            </pre>
+          )}
         </div>
       )}
     </section>
