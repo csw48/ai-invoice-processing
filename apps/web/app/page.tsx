@@ -2,7 +2,14 @@ import Link from "next/link";
 import { UploadPanel } from "../components/upload-panel";
 import { StatCards } from "../components/stat-cards";
 
-type Stats = { total: number; by_status: Record<string, number>; valid: number; invalid: number };
+type Stats = {
+  total: number;
+  by_status: Record<string, number>;
+  valid: number;
+  invalid: number;
+  hours_saved: number;
+  extraction_accuracy: number | null;
+};
 
 async function fetchStats(): Promise<Stats> {
   try {
@@ -10,7 +17,7 @@ async function fetchStats(): Promise<Stats> {
     const res = await fetch(`${apiUrl}/api/stats`, { cache: "no-store" });
     if (res.ok) return res.json();
   } catch {}
-  return { total: 0, by_status: {}, valid: 0, invalid: 0 };
+  return { total: 0, by_status: {}, valid: 0, invalid: 0, hours_saved: 0, extraction_accuracy: null };
 }
 
 export default async function Dashboard() {
@@ -33,8 +40,10 @@ export default async function Dashboard() {
       {/* Animated stat cards */}
       <StatCards
         total={stats.total}
-        review={stats.by_status["review"] ?? 0}
-        approved={stats.by_status["approved"] ?? 0}
+        needsReview={(stats.by_status["review"] ?? 0) + (stats.by_status["processing"] ?? 0)}
+        approved={(stats.by_status["approved"] ?? 0) + (stats.by_status["exported"] ?? 0)}
+        hoursSaved={stats.hours_saved}
+        extractionAccuracy={stats.extraction_accuracy}
       />
 
       {/* 2-col action area */}
@@ -59,15 +68,10 @@ export default async function Dashboard() {
               color: "var(--text-muted)",
             }}
           >
-            <li>1. Extract fields from PDF text with confidence scores.</li>
-            <li>
-              2. Validate required fields, Slovak VAT format, currency, and VAT
-              math.
-            </li>
-            <li>3. Enrich from vendor knowledge base in Supabase pgvector.</li>
-            <li>
-              4. Export JSON/CSV now; Pohoda XML connector scaffold included.
-            </li>
+            <li>1. AI extracts all fields with per-field confidence scores.</li>
+            <li>2. Validates required fields, VAT format, math, and duplicates.</li>
+            <li>3. Enriches from vendor knowledge base — auto-learns on approve.</li>
+            <li>4. Export as Pohoda XML, CSV, JSON, or POST to a webhook.</li>
           </ol>
           <Link
             href="/invoices"

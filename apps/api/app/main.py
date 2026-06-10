@@ -843,3 +843,33 @@ def update_config(
 @app.get("/api/config/demo")
 def demo_config():
     return ClientConfig().model_dump(mode="json")
+
+
+@app.post("/api/webhooks/test")
+def test_webhook(
+    body: dict,
+    client_id: str = Depends(get_client_id),
+):
+    """Fire a test POST to a webhook URL to verify connectivity before saving config."""
+    url = body.get("url", "")
+    if not _webhook_url_is_safe(url):
+        raise HTTPException(status_code=422, detail="Webhook URL must be a public http(s) endpoint")
+
+    import json
+    import hashlib
+    import hmac
+    import urllib.request
+
+    test_payload = json.dumps({"event": "test", "client_id": client_id}).encode()
+    headers = {"Content-Type": "application/json", "X-Factura-Event": "test"}
+    secret = body.get("secret", "")
+    if secret:
+        sig = hmac.new(secret.encode(), test_payload, hashlib.sha256).hexdigest()
+        headers["X-Factura-Signature"] = f"sha256={sig}"
+
+    req = urllib.request.Request(url, data=test_payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            return {"ok": True}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Webhook delivery failed: {exc}") from exc

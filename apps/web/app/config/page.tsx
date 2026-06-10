@@ -58,6 +58,7 @@ export default function ConfigPage() {
   const authHeaders = useAuthHeaders();
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
+  const [webhookTest, setWebhookTest] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,22 @@ export default function ConfigPage() {
       fields_required: prev.fields_required.filter((f) => f !== key),
       fields_optional: prev.fields_optional.filter((f) => f !== key),
     }));
+  }
+
+  async function testWebhook() {
+    if (!config.connector_config.webhook_url) return;
+    setWebhookTest("testing");
+    try {
+      const res = await fetch(`${apiUrl}/api/webhooks/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ url: config.connector_config.webhook_url, secret: config.connector_config.webhook_secret ?? "" }),
+      });
+      setWebhookTest(res.ok ? "ok" : "fail");
+    } catch {
+      setWebhookTest("fail");
+    }
+    setTimeout(() => setWebhookTest("idle"), 4000);
   }
 
   async function save() {
@@ -336,15 +353,62 @@ export default function ConfigPage() {
           )}
 
           {config.output_connector === "webhook" && (
-            <div style={{ marginTop: "20px" }}>
+            <div style={{ marginTop: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
               <label className="field-label">
                 Webhook URL
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <input
+                    className="field-input"
+                    style={{ flex: 1, marginTop: 0 }}
+                    value={config.connector_config.webhook_url ?? ""}
+                    placeholder="https://your-system.com/invoices/inbound"
+                    onChange={(e) => setConfig((p) => ({ ...p, connector_config: { ...p.connector_config, webhook_url: e.target.value } }))}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={testWebhook}
+                    disabled={!config.connector_config.webhook_url || webhookTest === "testing"}
+                    style={{ whiteSpace: "nowrap", alignSelf: "center", color: webhookTest === "ok" ? "var(--success)" : webhookTest === "fail" ? "var(--error)" : undefined }}
+                  >
+                    {webhookTest === "testing" ? "Testing…" : webhookTest === "ok" ? "✓ OK" : webhookTest === "fail" ? "✗ Failed" : "Test"}
+                  </button>
+                </div>
+                <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>Must be a public https endpoint.</p>
+              </label>
+              <label className="field-label">
+                Signing secret (HMAC-SHA256)
                 <input
                   className="field-input"
-                  value={config.connector_config.webhook_url ?? ""}
-                  placeholder="https://your-system.com/invoices/inbound"
-                  onChange={(e) => setConfig((p) => ({ ...p, connector_config: { ...p.connector_config, webhook_url: e.target.value } }))}
+                  type="password"
+                  value={config.connector_config.webhook_secret ?? ""}
+                  placeholder="leave blank to skip signing"
+                  onChange={(e) => setConfig((p) => ({ ...p, connector_config: { ...p.connector_config, webhook_secret: e.target.value } }))}
                 />
+                <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>Signature sent in X-Factura-Signature header.</p>
+              </label>
+            </div>
+          )}
+
+          {(config.output_connector === "csv" || config.output_connector === "pohoda" || config.output_connector === "json") && (
+            <div style={{ marginTop: "20px", maxWidth: "320px" }}>
+              <label className="field-label">
+                Home currency
+                <select
+                  className="field-input"
+                  value={config.connector_config.home_currency ?? "EUR"}
+                  onChange={(e) => setConfig((p) => ({ ...p, connector_config: { ...p.connector_config, home_currency: e.target.value } }))}
+                >
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="CZK">CZK — Czech Koruna</option>
+                  <option value="HUF">HUF — Hungarian Forint</option>
+                  <option value="PLN">PLN — Polish Zloty</option>
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="GBP">GBP — British Pound</option>
+                </select>
+                <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                  Invoices in a different currency are flagged as foreign-currency exports.
+                </p>
               </label>
             </div>
           )}

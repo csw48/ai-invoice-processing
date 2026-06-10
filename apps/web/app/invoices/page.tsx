@@ -12,6 +12,11 @@ type Invoice = {
   enriched?: { duplicate?: boolean };
 };
 
+function currencySymbol(code: string): string {
+  const symbols: Record<string, string> = { EUR: "€", CZK: "Kč", USD: "$", GBP: "£", HUF: "Ft", PLN: "zł" };
+  return symbols[code] ?? code;
+}
+
 function statusBadge(status: string): string {
   switch (status) {
     case "review":     return "badge badge-review";
@@ -172,7 +177,12 @@ export default async function InvoiceListPage({
                   <td className="td-mono">{field(inv, "invoice_number")}</td>
                   <td>{field(inv, "invoice_date")}</td>
                   <td className="td-mono">
-                    {field(inv, "total_amount")} {field(inv, "currency")}
+                    {field(inv, "currency") && (
+                      <span style={{ color: "var(--muted)", fontSize: "11px", marginRight: "2px" }}>
+                        {currencySymbol(field(inv, "currency"))}
+                      </span>
+                    )}
+                    {field(inv, "total_amount")}
                   </td>
                   <td>
                     {inv.country_code ? (
