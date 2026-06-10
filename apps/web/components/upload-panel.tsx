@@ -45,9 +45,19 @@ export function UploadPanel() {
         );
         return;
       }
-      const body = (await response.json()) as { invoice_id?: string };
+      const body = (await response.json()) as {
+        invoice_id?: string;
+        classification?: { document_type?: string; type_reasoning?: string };
+      };
       setState("done");
-      setMessage("Invoice processed. Opening review screen...");
+      const docType = body.classification?.document_type;
+      if (docType && docType !== "invoice" && docType !== "credit_note") {
+        setMessage(
+          `Classified as "${docType}" — not an invoice. Opening review for manual handling...`
+        );
+      } else {
+        setMessage("Invoice processed. Opening review screen...");
+      }
       if (body.invoice_id) {
         router.push(`/invoices/${body.invoice_id}`);
       }

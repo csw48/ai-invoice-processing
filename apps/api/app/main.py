@@ -18,8 +18,9 @@ from app.core.config import get_settings
 from app.deps import get_classifier, get_config_repository, get_extractor, get_log_fn, get_repository, get_storage, get_vendor_repository
 from app.repositories import ConfigRepository
 from app.country_profiles import detect_country
-from app.models import ClientConfig, ConfidenceValue, ExtractedInvoice, InvoiceStatus, ProcessedInvoice, VendorCreate
+from app.models import Classification, ClientConfig, ConfidenceValue, DocumentType, ExtractedInvoice, InvoiceStatus, ProcessedInvoice, VendorCreate
 from app.repositories import InvoiceRepository, VendorRepository
+from app.services.classify import classify_document
 from app.services.enrich import enrich_invoice
 from app.services.formatters import format_invoice
 from app.services.log import BufferedLogFn
@@ -324,6 +325,7 @@ def update_invoice_fields(
 async def reprocess_invoice(
     invoice_id: str,
     force_ocr: bool = False,
+    force_invoice: bool = False,
     repository: InvoiceRepository = Depends(get_repository),
     vendor_repository: VendorRepository = Depends(get_vendor_repository),
     storage: FileStorage = Depends(get_storage),
@@ -350,6 +352,23 @@ async def reprocess_invoice(
 
     extractor = get_extractor()
     classifier = get_classifier()
+    if force_invoice:
+        # Manual override: the user says this IS an invoice. Keep the classifier's
+        # party/reasoning output but force the type so extraction always runs.
+        inner = classifier or classify_document
+
+        def classifier(text: str) -> Classification:
+            try:
+                base = inner(text)
+            except Exception:
+                base = classify_document(text)
+            reasoning = "Manually overridden to invoice by reviewer."
+            if base.type_reasoning:
+                reasoning = f"{reasoning} (Classifier said: {base.type_reasoning})"
+            return base.model_copy(
+                update={"document_type": DocumentType.invoice, "type_reasoning": reasoning}
+            )
+
     result = process_invoice(
         raw_text=raw_text,
         config=config,

@@ -236,6 +236,7 @@ export default function InvoiceReviewClient({
             {classification!.type_reasoning && (
               <div style={{ marginTop: "4px", color: "var(--muted)" }}>{classification!.type_reasoning}</div>
             )}
+            <NonInvoiceActions invoiceId={invoice.invoice_id} apiUrl={apiUrl} />
           </div>
         ) : (
           <ValidationSummary issues={validation.issues} valid={validation.valid} />
@@ -489,6 +490,77 @@ export default function InvoiceReviewClient({
         {/* Reprocess */}
         <ReprocessButton invoiceId={invoice.invoice_id} apiUrl={apiUrl} />
       </div>
+    </div>
+  );
+}
+
+function NonInvoiceActions({ invoiceId, apiUrl }: { invoiceId: string; apiUrl: string }) {
+  const router = useRouter();
+  const authHeaders = useAuthHeaders();
+  const [loading, setLoading] = useState<"override" | "delete" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleProcessAsInvoice() {
+    setLoading("override");
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/invoices/${invoiceId}/reprocess?force_invoice=true`, {
+        method: "POST",
+        headers: await authHeaders(),
+      });
+      if (!res.ok) {
+        setError(`Re-processing failed (${res.status}).`);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Network error — please try again.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Delete this document? It will be removed from the list.")) return;
+    setLoading("delete");
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/invoices/${invoiceId}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      if (!res.ok && res.status !== 204) {
+        setError(`Delete failed (${res.status}).`);
+        return;
+      }
+      router.push("/invoices");
+      router.refresh();
+    } catch {
+      setError("Network error — please try again.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: "10px", display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+      <button
+        className="btn btn-primary"
+        style={{ fontSize: "12px", padding: "5px 12px" }}
+        onClick={handleProcessAsInvoice}
+        disabled={loading !== null}
+      >
+        {loading === "override" ? "Processing…" : "Process as invoice anyway"}
+      </button>
+      <button
+        className="btn btn-ghost"
+        style={{ fontSize: "12px", padding: "5px 12px" }}
+        onClick={handleDelete}
+        disabled={loading !== null}
+      >
+        {loading === "delete" ? "Deleting…" : "Delete document"}
+      </button>
+      {error && <span style={{ color: "var(--error)", fontSize: "12px" }}>{error}</span>}
     </div>
   );
 }

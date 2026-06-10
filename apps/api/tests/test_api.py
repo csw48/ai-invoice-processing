@@ -609,3 +609,27 @@ def test_vendor_data_isolated_per_tenant():
         assert client.delete(f"/api/vendors/{vendor_id}").status_code == 404
     finally:
         app.dependency_overrides.pop(get_client_id, None)
+
+
+def test_reprocess_force_invoice_overrides_classification():
+    client = _client()
+    # Too short / no markers → deterministic classifier diverts to junk.
+    pdf_bytes = _pdf_with("Hello world")
+    upload = client.post(
+        "/api/invoices/upload",
+        files={"file": ("scan.pdf", pdf_bytes, "application/pdf")},
+    )
+    body = upload.json()
+    assert body["classification"]["document_type"] == "junk"
+    assert body["status"] == "discarded"
+    invoice_id = body["invoice_id"]
+
+    response = client.post(f"/api/invoices/{invoice_id}/reprocess?force_invoice=true")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["classification"]["document_type"] == "invoice"
+    assert "overridden" in body["classification"]["type_reasoning"]
+    # Extraction pipeline ran (no longer short-circuited).
+    assert body["status"] != "discarded"
+    assert body["formatted"]["type"] != "skipped"

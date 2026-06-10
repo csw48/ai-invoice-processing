@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit",
+    "lint": "eslint app components lib middleware.ts && tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest"
   },
